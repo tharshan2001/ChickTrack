@@ -2,79 +2,67 @@
 
 ## Status
 
-Planned.
+Implemented.
 
 ## Purpose
 
-Provide management visibility into procurement, stock, distribution, profitability, and outstanding balances.
+Provide management visibility into procurement, stock, distribution, profitability, shrinkage, and outstanding branch balances.
 
 ## Actors
 
 - Owner
 - Accountant
 - Managers
+- Viewer
 
 ## Dashboard
 
 Cards:
 
-- Today's procurement value.
+- Procurement value and weight for the selected range.
 - Current stock weight.
 - Stock value.
-- Today's distributions.
+- Distribution weight and revenue for the selected range.
 - Branch outstanding balance.
-- Supplier payables.
 - Shrinkage and loss.
 
-Charts:
-
-- Purchase price trend.
-- Distribution by branch.
-- Stock ageing.
-- Profit by branch.
+The dashboard defaults to today. `branchId` scopes distribution, outstanding, and shrinkage figures.
 
 ## Reports
 
+Implemented:
+
 - Procurement report.
-- Supplier purchase report.
-- Procurement cost and landed-cost report.
-- Purchase price report.
 - Stock by batch report.
-- Stock movement report.
-- Batch ageing report.
 - Distribution report.
-- Branch summary report.
-- Profit and margin report.
+- Profit and margin report by branch.
 - Shrinkage and loss report.
-- Expense report.
-- Supplier payables report.
 - Branch settlements report.
-- Consolidated management report.
+
+Supplier purchase and supplier payables reports were dropped with the supplier payments module.
 
 ## Filters
 
-- Date range.
-- Branch.
-- Supplier.
-- Chicken type.
-- Batch.
-- Status.
+- Date range (`from`, `to`).
+- Branch (`branchId`).
+- Supplier (`supplierId`) on the procurement report.
+- Chicken type (`chickenTypeId`) on the stock report.
 
 ## Exports
 
-MVP: CSV and PDF. Excel is deferred.
+CSV and PDF are generated server-side from the same data that backs the on-screen report.
+Excel is deferred.
 
 ## Rules
 
 - Reports read posted data only.
 - Totals reconcile to document and movement totals.
-- Large exports are generated server-side.
 - Access is role-checked and branch-scoped.
 - Report parameters are validated.
 
 ## API
 
-Planned:
+Implemented:
 
 - `GET /api/v1/dashboard`
 - `GET /api/v1/reports/procurement`
@@ -82,7 +70,6 @@ Planned:
 - `GET /api/v1/reports/distribution`
 - `GET /api/v1/reports/profit`
 - `GET /api/v1/reports/shrinkage`
-- `GET /api/v1/reports/payables`
 - `GET /api/v1/reports/settlements`
 - `GET /api/v1/reports/{name}/export?format=csv|pdf`
 

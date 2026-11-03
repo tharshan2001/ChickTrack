@@ -4,7 +4,7 @@
 
 Deliver a deployable backend that supports one pilot branch end-to-end:
 
-**OAuth2 login -> master data -> daily price -> procurement -> receiving -> stock batch -> FIFO distribution -> branch receiving -> payment/settlement -> report.**
+**OAuth2 login -> master data -> daily price -> procurement -> stock batch -> FIFO distribution -> branch receiving -> settlement -> report.**
 
 The mobile app is deferred.
 
@@ -49,7 +49,7 @@ The mobile app is deferred.
 | M3 Procurement and receiving | 1.5 weeks | Landed-cost examples pass. |
 | M4 Inventory and FIFO | 1.5 weeks | Concurrent dispatch cannot oversell. |
 | M5 Distribution and branch receiving | 1.5 weeks | End-to-end flow passes. |
-| M6 Payments and settlements | 1 week | Balances match fixtures. |
+| M6 Branch settlements | 1 week | Balances match fixtures. |
 | M7 Dashboard and reports | 1.5 weeks | Known dataset produces expected outputs. |
 | M8 Hardening and pilot | 1 week | Restore drill and UAT sign-off. |
 
@@ -58,12 +58,11 @@ The mobile app is deferred.
 1. OAuth2 login.
 2. Create branch and supplier.
 3. Set daily price.
-4. Create procurement.
-5. Receive stock.
-6. Create batch.
-7. Dispatch to branch.
-8. Confirm branch receipt.
-9. Show one profitability report.
+4. Create procurement (stock batch is created automatically).
+5. Dispatch to branch.
+6. Confirm branch receipt.
+7. Settle the branch balance.
+8. Show one profitability report.
 
 ## Definition of Done
 

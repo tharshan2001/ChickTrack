@@ -11,7 +11,7 @@ Each document describes the business purpose, rules, data, API surface, and curr
 | Inventory and batches | Planned | [inventory.md](inventory.md) |
 | Distribution and branch receiving | Planned | [distribution.md](distribution.md) |
 | Payments and settlements | Planned | [finance.md](finance.md) |
-| Dashboard and reports | Planned | [reports.md](reports.md) |
+| Dashboard and reports | Implemented | [reports.md](reports.md) |
 | Audit and idempotency | Foundation ready | [audit-and-idempotency.md](audit-and-idempotency.md) |
 
 ## Status Definitions
