@@ -23,8 +23,8 @@ The mobile app is deferred.
 - FIFO allocation with audited override.
 - Distribution, dispatch, branch receiving, discrepancy reasons.
 - Reversal documents for posted records.
-- Supplier payments and basic branch settlements.
-- Outstanding supplier and branch balances.
+- Basic branch settlements.
+- Outstanding branch balances.
 - Dashboard and core reports with CSV/PDF exports.
 - Audit log, document numbering, idempotency keys.
 - Testcontainers integration tests and Docker deployment.

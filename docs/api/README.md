@@ -87,7 +87,7 @@ Errors use the standard format described in [Errors](errors.md).
 | Procurement | `/api/v1/procurements` | Planned |
 | Inventory | `/api/v1/stock-batches` | Planned |
 | Distribution | `/api/v1/distributions` | Planned |
-| Finance | `/api/v1/payments` | Planned |
+| Finance | `/api/v1/branch-settlements` | Planned |
 | Reports | `/api/v1/reports` | Planned |
 
 ## OpenAPI
