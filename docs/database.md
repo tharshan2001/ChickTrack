@@ -14,7 +14,7 @@ Planned migrations:
 
 | Migration | Purpose |
 |---|---|
-| `V4__pricing.sql` | Daily prices |
+| `V4__pricing.sql` | Daily prices (chicken type, optional branch, optional supplier) |
 | `V5__procurement.sql` | Procurement, items, receipts, expenses |
 | `V6__inventory.sql` | Batches, movements, adjustments |
 | `V7__distribution.sql` | Distributions, items, allocations, branch receipts |
