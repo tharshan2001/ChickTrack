@@ -15,7 +15,6 @@ Idempotency-Key: <uuid>
 ```json
 {
   "supplierId": "00000000-0000-0000-0000-000000000000",
-  "branchId": "00000000-0000-0000-0000-000000000000",
   "procurementDate": "2026-01-15",
   "items": [
     {

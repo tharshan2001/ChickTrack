@@ -10,16 +10,18 @@ Flyway owns all schema changes. Migrations are immutable once applied.
 | `V2__identity.sql` | Branches, users, roles, and join tables |
 | `V3__foundation.sql` | Audit logs, document sequences, idempotency records |
 
-Planned migrations:
+Current and planned migrations:
 
 | Migration | Purpose |
 |---|---|
-| `V4__pricing.sql` | Daily prices (chicken type, optional branch, optional supplier) |
-| `V5__procurement.sql` | Procurement, items, receipts, expenses |
-| `V6__inventory.sql` | Batches, movements, adjustments |
-| `V7__distribution.sql` | Distributions, items, allocations, branch receipts |
-| `V8__finance.sql` | Payments and settlements |
-| `V9__indexes.sql` | Additional reporting indexes |
+| `V4__suppliers.sql` | Suppliers |
+| `V5__reference_data.sql` | Chicken types and expense categories |
+| `V6__pricing.sql` | Daily prices (chicken type, optional branch, optional supplier) |
+| `V7__procurement.sql` | Procurement, items, receipts, expenses |
+| `V8__inventory.sql` | Stock batches |
+| `V9__distribution.sql` | Distributions, items, allocations, branch receipts |
+| `V10__finance.sql` | Payments and settlements |
+| `V11__indexes.sql` | Additional reporting indexes |
 
 ## Current Tables
 
