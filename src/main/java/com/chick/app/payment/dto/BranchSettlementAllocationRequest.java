@@ -6,6 +6,6 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 public record BranchSettlementAllocationRequest(
-		@NotNull UUID distributionId,
+		@NotNull UUID branchSaleId,
 		@NotNull @DecimalMin("0.01") BigDecimal amount) {
 }

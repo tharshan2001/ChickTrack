@@ -16,8 +16,8 @@ Track received stock by batch, cost, weight, and movement history.
 
 ## Rules
 
-- Every receipt creates a batch.
-- `inventory_movements` is the source of truth.
+- Every procurement creates a batch and writes a `RECEIPT` movement for it.
+- `inventory_movements` is the source of truth; warehouse stock reconciles as `RECEIPT - DISTRIBUTION = remaining weight`.
 - `stock_batches.remaining_weight` is updated transactionally.
 - Remaining weight cannot be negative.
 - Adjustments require a reason and approval.

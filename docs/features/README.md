@@ -2,6 +2,8 @@
 
 Each document describes the business purpose, rules, data, API surface, and current implementation status of a feature.
 
+The end-to-end business logic and flow is documented in [Business Flow](../business-flow.md).
+
 | Feature | Status | Document |
 |---|---|---|
 | Authentication and OAuth2 | Implemented foundation | [authentication.md](authentication.md) |

@@ -2,6 +2,7 @@ package com.chick.app.payment.domain;
 
 import com.chick.app.common.domain.BaseEntity;
 import com.chick.app.distribution.domain.Distribution;
+import com.chick.app.sales.domain.BranchSale;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -24,9 +25,13 @@ public class BranchSettlementAllocation extends BaseEntity {
 	@JoinColumn(name = "branch_settlement_id", nullable = false)
 	private BranchSettlement branchSettlement;
 
-	@ManyToOne(fetch = FetchType.LAZY, optional = false)
-	@JoinColumn(name = "distribution_id", nullable = false)
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "distribution_id")
 	private Distribution distribution;
+
+	@ManyToOne(fetch = FetchType.LAZY)
+	@JoinColumn(name = "branch_sale_id")
+	private BranchSale branchSale;
 
 	@Column(nullable = false, precision = 16, scale = 2)
 	private BigDecimal amount;

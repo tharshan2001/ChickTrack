@@ -16,12 +16,14 @@ Idempotency-Key: <uuid>
   "reference": "SETTLE-001",
   "allocations": [
     {
-      "distributionId": "00000000-0000-0000-0000-000000000000",
+      "branchSaleId": "00000000-0000-0000-0000-000000000000",
       "amount": "250000.00"
     }
   ]
 }
 ```
+
+Settlements settle the daily sales the branch entered. Each allocation points at a branch sale and cannot exceed that sale's outstanding amount.
 
 ## Branch Balance
 
@@ -29,10 +31,14 @@ Idempotency-Key: <uuid>
 GET /api/v1/branches/{id}/balance
 ```
 
+Returns `outstandingAmount`, which is total entered sales minus posted settlements.
+
 ## Rules
 
-- Allocations cannot exceed outstanding balances.
-- Posted payments and settlements are immutable.
+- Allocations must sum to the settlement amount.
+- An allocation cannot exceed the outstanding amount of the branch sale it settles.
+- The branch sale must belong to the settlement's branch.
+- Posted settlements are immutable and can only be reversed.
 - Reversals restore balances.
 - Totals are derived from posted allocations.
 

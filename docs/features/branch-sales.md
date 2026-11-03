@@ -22,7 +22,7 @@ Capture what a branch actually sold so profit and loss can be marked without FIF
 - Cost is taken from the stock the branch received on that date: received weight multiplied by the landed cost assigned at dispatch.
 - Profit or loss is `total sales - cost`.
 - Cost is captured when the day's sales are recorded; receipts recorded later do not retroactively change it.
-- Branch settlement balances are still based on dispatched value and are not yet aligned to entered sales.
+- Branch settlements settle these sales: outstanding balance = entered sales - posted settlements.
 
 ## Data
 

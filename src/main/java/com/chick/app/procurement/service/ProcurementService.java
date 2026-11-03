@@ -5,7 +5,9 @@ import com.chick.app.chicken.repository.ChickenTypeRepository;
 import com.chick.app.common.service.DocumentNumberService;
 import com.chick.app.expense.domain.ExpenseCategory;
 import com.chick.app.expense.repository.ExpenseCategoryRepository;
+import com.chick.app.inventory.domain.InventoryMovement;
 import com.chick.app.inventory.domain.StockBatch;
+import com.chick.app.inventory.repository.InventoryMovementRepository;
 import com.chick.app.inventory.repository.StockBatchRepository;
 import com.chick.app.procurement.domain.CommissionMethod;
 import com.chick.app.procurement.domain.Procurement;
@@ -55,6 +57,7 @@ public class ProcurementService {
 	private final ChickenTypeRepository chickenTypes;
 	private final ExpenseCategoryRepository expenseCategories;
 	private final StockBatchRepository stockBatches;
+	private final InventoryMovementRepository movements;
 	private final DocumentNumberService documentNumbers;
 
 	public ProcurementService(
@@ -64,6 +67,7 @@ public class ProcurementService {
 			ChickenTypeRepository chickenTypes,
 			ExpenseCategoryRepository expenseCategories,
 			StockBatchRepository stockBatches,
+			InventoryMovementRepository movements,
 			DocumentNumberService documentNumbers) {
 		this.procurements = procurements;
 		this.mapper = mapper;
@@ -71,6 +75,7 @@ public class ProcurementService {
 		this.chickenTypes = chickenTypes;
 		this.expenseCategories = expenseCategories;
 		this.stockBatches = stockBatches;
+		this.movements = movements;
 		this.documentNumbers = documentNumbers;
 	}
 
@@ -156,6 +161,14 @@ public class ProcurementService {
 				batch.setLandedCostPerKg(item.getLandedCostPerKg());
 				batch.setReceivedAt(java.time.Instant.now());
 				stockBatches.save(batch);
+
+				InventoryMovement movement = new InventoryMovement();
+				movement.setStockBatch(batch);
+				movement.setType(InventoryMovement.MovementType.RECEIPT);
+				movement.setWeightKg(item.getReceivedWeightKg());
+				movement.setReferenceType("PROCUREMENT");
+				movement.setReferenceId(saved.getId());
+				movements.save(movement);
 			}
 		}
 

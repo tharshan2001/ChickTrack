@@ -2,9 +2,8 @@ package com.chick.app.payment.service;
 
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.repository.BranchRepository;
-import com.chick.app.distribution.domain.Distribution;
-import com.chick.app.distribution.domain.DistributionStatus;
-import com.chick.app.distribution.repository.DistributionRepository;
+import com.chick.app.common.exception.BusinessException;
+import com.chick.app.common.exception.ResourceNotFoundException;
 import com.chick.app.payment.domain.BranchSettlement;
 import com.chick.app.payment.domain.BranchSettlementAllocation;
 import com.chick.app.payment.dto.BalanceResponse;
@@ -13,8 +12,8 @@ import com.chick.app.payment.dto.BranchSettlementResponse;
 import com.chick.app.payment.dto.SettlementReverseRequest;
 import com.chick.app.payment.mapper.SettlementMapper;
 import com.chick.app.payment.repository.BranchSettlementRepository;
-import com.chick.app.common.exception.BusinessException;
-import com.chick.app.common.exception.ResourceNotFoundException;
+import com.chick.app.sales.domain.BranchSale;
+import com.chick.app.sales.repository.BranchSaleRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
@@ -34,17 +33,17 @@ public class SettlementService {
 	private final BranchSettlementRepository settlements;
 	private final SettlementMapper mapper;
 	private final BranchRepository branches;
-	private final DistributionRepository distributions;
+	private final BranchSaleRepository branchSales;
 
 	public SettlementService(
 			BranchSettlementRepository settlements,
 			SettlementMapper mapper,
 			BranchRepository branches,
-			DistributionRepository distributions) {
+			BranchSaleRepository branchSales) {
 		this.settlements = settlements;
 		this.mapper = mapper;
 		this.branches = branches;
-		this.distributions = distributions;
+		this.branchSales = branchSales;
 	}
 
 	@Transactional(readOnly = true)
@@ -81,26 +80,23 @@ public class SettlementService {
 		settlement.setStatus(BranchSettlement.Status.POSTED);
 
 		for (var allocationRequest : request.allocations()) {
-			Distribution distribution = distributions.findById(allocationRequest.distributionId())
-					.orElseThrow(() -> new ResourceNotFoundException("Distribution", allocationRequest.distributionId()));
-			if (!distribution.getBranch().getId().equals(branch.getId())) {
+			BranchSale sale = branchSales.findById(allocationRequest.branchSaleId())
+					.orElseThrow(() -> new ResourceNotFoundException("BranchSale", allocationRequest.branchSaleId()));
+			if (!sale.getBranch().getId().equals(branch.getId())) {
 				throw new BusinessException("BUSINESS_RULE_VIOLATION",
-						"Distribution does not belong to branch", HttpStatus.BAD_REQUEST);
-			}
-			if (distribution.getStatus() == DistributionStatus.DRAFT || distribution.getStatus() == DistributionStatus.REVERSED) {
-				throw new BusinessException("BUSINESS_RULE_VIOLATION",
-						"Cannot allocate settlement to this distribution", HttpStatus.BAD_REQUEST);
+						"Branch sale does not belong to branch", HttpStatus.BAD_REQUEST);
 			}
 
-			BigDecimal outstanding = distributionOutstanding(distribution);
+			BigDecimal outstanding = saleOutstanding(sale);
 			if (allocationRequest.amount().compareTo(outstanding) > 0) {
 				throw new BusinessException("OVER_ALLOCATION",
-						"Settlement allocation exceeds outstanding balance", HttpStatus.CONFLICT);
+						"Settlement allocation exceeds the outstanding balance of the branch sale",
+						HttpStatus.CONFLICT);
 			}
 
 			BranchSettlementAllocation allocation = mapper.toAllocation(allocationRequest);
 			allocation.setBranchSettlement(settlement);
-			allocation.setDistribution(distribution);
+			allocation.setBranchSale(sale);
 			allocation.setAmount(allocationRequest.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 			settlement.getAllocations().add(allocation);
 		}
@@ -125,12 +121,9 @@ public class SettlementService {
 		branches.findById(branchId)
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
 
-		BigDecimal totalRevenue = distributions.findAll((root, query, cb) -> cb.and(
-				cb.equal(root.get("branch").get("id"), branchId),
-				cb.notEqual(root.get("status"), DistributionStatus.DRAFT),
-				cb.notEqual(root.get("status"), DistributionStatus.REVERSED)))
+		BigDecimal totalSales = branchSales.findAll((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId))
 				.stream()
-				.map(Distribution::getTotalRevenue)
+				.map(BranchSale::getTotalSales)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
 
 		BigDecimal settled = settlements.findAll((root, query, cb) -> cb.and(
@@ -141,7 +134,7 @@ public class SettlementService {
 				.map(BranchSettlementAllocation::getAmount)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
 
-		return new BalanceResponse(totalRevenue.subtract(settled).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		return new BalanceResponse(totalSales.subtract(settled).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 	}
 
 	private BranchSettlement find(UUID id) {
@@ -149,13 +142,14 @@ public class SettlementService {
 				.orElseThrow(() -> new ResourceNotFoundException("BranchSettlement", id));
 	}
 
-	private BigDecimal distributionOutstanding(Distribution distribution) {
+	private BigDecimal saleOutstanding(BranchSale sale) {
 		BigDecimal settled = settlements.findAll((root, query, cb) -> cb.equal(root.get("status"), BranchSettlement.Status.POSTED))
 				.stream()
 				.flatMap(settlement -> settlement.getAllocations().stream())
-				.filter(allocation -> allocation.getDistribution().getId().equals(distribution.getId()))
+				.filter(allocation -> allocation.getBranchSale() != null
+						&& allocation.getBranchSale().getId().equals(sale.getId()))
 				.map(BranchSettlementAllocation::getAmount)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
-		return distribution.getTotalRevenue().subtract(settled);
+		return sale.getTotalSales().subtract(settled);
 	}
 }

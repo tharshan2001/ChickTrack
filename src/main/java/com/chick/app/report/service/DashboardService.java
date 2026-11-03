@@ -104,11 +104,13 @@ public class DashboardService {
 			distributionRevenue = distributionRevenue.add(distribution.getTotalRevenue());
 		}
 
-		Specification<Distribution> allPostedSpec =
-				(root, query, cb) -> cb.and(root.get("status").in(ReportService.POSTED_DISTRIBUTION_STATUSES));
-		for (Distribution distribution : distributions.findAll(allPostedSpec)) {
-			if (scope.allows(distribution.getBranch().getId())) {
-				outstandingRevenue = outstandingRevenue.add(distribution.getTotalRevenue());
+		Specification<BranchSale> allSalesSpec = (root, query, cb) -> cb.conjunction();
+		if (branchId != null) {
+			allSalesSpec = allSalesSpec.and((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
+		}
+		for (BranchSale sale : branchSales.findAll(allSalesSpec)) {
+			if (scope.allows(sale.getBranch().getId())) {
+				outstandingRevenue = outstandingRevenue.add(sale.getTotalSales());
 			}
 		}
 

@@ -25,6 +25,7 @@ public interface SettlementMapper {
 	@Mapping(target = "id", ignore = true)
 	@Mapping(target = "branchSettlement", ignore = true)
 	@Mapping(target = "distribution", ignore = true)
+	@Mapping(target = "branchSale", ignore = true)
 	@Mapping(target = "version", ignore = true)
 	@Mapping(target = "createdAt", ignore = true)
 	@Mapping(target = "updatedAt", ignore = true)
@@ -34,6 +35,6 @@ public interface SettlementMapper {
 	@Mapping(target = "status", expression = "java(settlement.getStatus().name())")
 	BranchSettlementResponse toResponse(BranchSettlement settlement);
 
-	@Mapping(target = "distributionId", source = "distribution.id")
+	@Mapping(target = "branchSaleId", source = "branchSale.id")
 	BranchSettlementAllocationResponse toAllocationResponse(BranchSettlementAllocation allocation);
 }
