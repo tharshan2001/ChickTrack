@@ -8,6 +8,7 @@ ChickTrack is a backend for managing chicken procurement, inventory, distributio
 - [Architecture](architecture.md)
 - [Database](database.md)
 - [Security and OAuth2](security.md)
+- [Standards and Guardrails](standards-and-guardrails.md)
 - [Feature Documentation](features/README.md)
 - [API Documentation](api/README.md)
 
