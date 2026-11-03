@@ -21,13 +21,15 @@ Record effective-dated purchase and selling prices so procurement and distributi
 - Procurement stores a snapshot of the price used.
 - Distribution stores a snapshot of the selling price used.
 - A price may apply to all suppliers or a specific supplier.
-- Prices are scoped by chicken type.
+- A price may apply to all branches or a specific branch.
+- Prices are scoped by chicken type and branch.
 
 ## Data
 
 `daily_prices` (planned):
 
 - Chicken type
+- Optional branch
 - Optional supplier
 - Purchase price per kg
 - Selling price per kg

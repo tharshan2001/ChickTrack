@@ -14,6 +14,7 @@ Authorization: Bearer <token>
 ```json
 {
   "chickenTypeId": "00000000-0000-0000-0000-000000000000",
+  "branchId": "00000000-0000-0000-0000-000000000000",
   "supplierId": "00000000-0000-0000-0000-000000000000",
   "purchasePricePerKg": "850.0000",
   "sellingPricePerKg": "1100.0000",
@@ -24,7 +25,7 @@ Authorization: Bearer <token>
 ## List Prices
 
 ```http
-GET /api/v1/daily-prices?chickenTypeId=...&supplierId=...&from=2026-01-01&to=2026-01-31
+GET /api/v1/daily-prices?chickenTypeId=...&branchId=...&supplierId=...&from=2026-01-01&to=2026-01-31
 ```
 
 ## Current Price
@@ -53,6 +54,7 @@ GET /api/v1/daily-prices/trend?chickenTypeId=...&from=2026-01-01&to=2026-03-31&g
 {
   "id": "00000000-0000-0000-0000-000000000000",
   "chickenTypeId": "00000000-0000-0000-0000-000000000000",
+  "branchId": "00000000-0000-0000-0000-000000000000",
   "supplierId": null,
   "purchasePricePerKg": "850.0000",
   "sellingPricePerKg": "1100.0000",
