@@ -11,6 +11,8 @@ import com.chick.app.payment.repository.BranchSettlementRepository;
 import com.chick.app.procurement.domain.Procurement;
 import com.chick.app.procurement.repository.ProcurementRepository;
 import com.chick.app.report.dto.DashboardResponse;
+import com.chick.app.sales.domain.BranchSale;
+import com.chick.app.sales.repository.BranchSaleRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -32,6 +34,7 @@ public class DashboardService {
 	private final DistributionRepository distributions;
 	private final InventoryMovementRepository movements;
 	private final BranchSettlementRepository settlements;
+	private final BranchSaleRepository branchSales;
 	private final ReportScopeService scopeService;
 	private final ReportService reports;
 
@@ -41,6 +44,7 @@ public class DashboardService {
 			DistributionRepository distributions,
 			InventoryMovementRepository movements,
 			BranchSettlementRepository settlements,
+			BranchSaleRepository branchSales,
 			ReportScopeService scopeService,
 			ReportService reports) {
 		this.procurements = procurements;
@@ -48,6 +52,7 @@ public class DashboardService {
 		this.distributions = distributions;
 		this.movements = movements;
 		this.settlements = settlements;
+		this.branchSales = branchSales;
 		this.scopeService = scopeService;
 		this.reports = reports;
 	}
@@ -118,6 +123,23 @@ public class DashboardService {
 					.reduce(BigDecimal.ZERO, BigDecimal::add));
 		}
 
+		BigDecimal totalSales = BigDecimal.ZERO;
+		BigDecimal salesCost = BigDecimal.ZERO;
+		Specification<BranchSale> salesSpec = (root, query, cb) -> cb.and(
+				cb.greaterThanOrEqualTo(root.get("saleDate"), effectiveFrom),
+				cb.lessThanOrEqualTo(root.get("saleDate"), effectiveTo));
+		if (branchId != null) {
+			salesSpec = salesSpec.and((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
+		}
+		for (BranchSale sale : branchSales.findAll(salesSpec)) {
+			if (!scope.allows(sale.getBranch().getId())) {
+				continue;
+			}
+			totalSales = totalSales.add(sale.getTotalSales());
+			salesCost = salesCost.add(sale.getCostAmount());
+		}
+		BigDecimal profit = totalSales.subtract(salesCost);
+
 		Instant shrinkageStart = effectiveFrom.atStartOfDay(ZoneOffset.UTC).toInstant();
 		Instant shrinkageEnd = effectiveTo.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
 		BigDecimal shrinkageWeight = BigDecimal.ZERO;
@@ -146,6 +168,9 @@ public class DashboardService {
 				stockValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 				distributionWeight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP),
 				distributionRevenue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+				totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+				salesCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+				profit.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 				outstandingRevenue.subtract(outstandingSettled).setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 				shrinkageWeight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP));
 	}

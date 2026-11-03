@@ -4,6 +4,7 @@ import com.chick.app.common.exception.BusinessException;
 import com.chick.app.report.dto.DistributionReportRow;
 import com.chick.app.report.dto.ProcurementReportRow;
 import com.chick.app.report.dto.ProfitReportRow;
+import com.chick.app.report.dto.SalesReportRow;
 import com.chick.app.report.dto.SettlementReportRow;
 import com.chick.app.report.dto.ShrinkageReportRow;
 import com.chick.app.report.dto.StockReportRow;
@@ -66,8 +67,9 @@ public class ReportExportService {
 			case "profit" -> tables.toTable(reports.profit(from, to, branchId), ProfitReportRow.class);
 			case "shrinkage" -> tables.toTable(reports.shrinkage(from, to, branchId), ShrinkageReportRow.class);
 			case "settlements" -> tables.toTable(reports.settlements(from, to, branchId), SettlementReportRow.class);
+			case "sales" -> tables.toTable(reports.sales(from, to, branchId), SalesReportRow.class);
 			default -> throw new BusinessException("REPORT_NOT_FOUND",
-					"Unknown report '" + name + "'. Available reports: procurement, stock, distribution, profit, shrinkage, settlements",
+					"Unknown report '" + name + "'. Available reports: procurement, stock, distribution, sales, profit, shrinkage, settlements",
 					HttpStatus.NOT_FOUND);
 		};
 	}

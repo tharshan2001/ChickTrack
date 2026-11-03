@@ -10,6 +10,7 @@ Each document describes the business purpose, rules, data, API surface, and curr
 | Procurement and receiving | Planned | [procurement.md](procurement.md) |
 | Inventory and batches | Planned | [inventory.md](inventory.md) |
 | Distribution and branch receiving | Planned | [distribution.md](distribution.md) |
+| Branch sales and profit marking | Implemented | [branch-sales.md](branch-sales.md) |
 | Payments and settlements | Planned | [finance.md](finance.md) |
 | Dashboard and reports | Implemented | [reports.md](reports.md) |
 | Audit and idempotency | Foundation ready | [audit-and-idempotency.md](audit-and-idempotency.md) |

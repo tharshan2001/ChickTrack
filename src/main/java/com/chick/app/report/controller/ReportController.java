@@ -6,6 +6,7 @@ import com.chick.app.report.dto.DistributionReportRow;
 import com.chick.app.report.dto.ProcurementReportRow;
 import com.chick.app.report.dto.ProfitReportRow;
 import com.chick.app.report.dto.ReportResult;
+import com.chick.app.report.dto.SalesReportRow;
 import com.chick.app.report.dto.SettlementReportRow;
 import com.chick.app.report.dto.ShrinkageReportRow;
 import com.chick.app.report.dto.StockReportRow;
@@ -86,6 +87,15 @@ public class ReportController {
 			@RequestParam(required = false) LocalDate to,
 			@RequestParam(required = false) UUID branchId) {
 		return ResponseEntity.ok(ApiResponse.of(reportService.profit(from, to, branchId)));
+	}
+
+	@GetMapping("/reports/sales")
+	@PreAuthorize(REPORT_ACCESS)
+	public ResponseEntity<ApiResponse<ReportResult<SalesReportRow>>> sales(
+			@RequestParam(required = false) LocalDate from,
+			@RequestParam(required = false) LocalDate to,
+			@RequestParam(required = false) UUID branchId) {
+		return ResponseEntity.ok(ApiResponse.of(reportService.sales(from, to, branchId)));
 	}
 
 	@GetMapping("/reports/shrinkage")

@@ -29,6 +29,9 @@ Example response:
     "stockValue": "3900000.00",
     "distributionWeightKg": "1800.000",
     "distributionRevenue": "1620000.00",
+    "totalSales": "1500000.00",
+    "salesCost": "1180000.00",
+    "profit": "320000.00",
     "branchOutstanding": "450000.00",
     "shrinkageWeightKg": "12.500"
   },
@@ -75,13 +78,22 @@ GET /api/v1/reports/distribution?branchId=...&from=2026-01-01&to=2026-01-31
 
 Totals: `weightKg`, `cost`, `revenue`, `margin`, `expenseAmount`.
 
+### Sales
+
+```http
+GET /api/v1/reports/sales?branchId=...&from=2026-01-01&to=2026-01-31
+```
+
+Totals: `totalSales`, `costAmount`, `profit`, `profitPercent`.
+
 ### Profit
 
 ```http
 GET /api/v1/reports/profit?branchId=...&from=2026-01-01&to=2026-01-31
 ```
 
-Rows are grouped per branch. Totals: `distributionCount`, `weightKg`, `revenue`, `cost`, `expenseAmount`, `margin`, `marginPercent`.
+Rows are grouped per branch and are based on the total sales the branch entered.
+Totals: `saleCount`, `totalSales`, `costAmount`, `profit`, `profitPercent`.
 
 ### Shrinkage
 
@@ -105,7 +117,7 @@ Totals: `settledAmount`.
 GET /api/v1/reports/{name}/export?format=csv|pdf&from=...&to=...&branchId=...&supplierId=...&chickenTypeId=...
 ```
 
-`{name}` is one of `procurement`, `stock`, `distribution`, `profit`, `shrinkage`, `settlements`.
+`{name}` is one of `procurement`, `stock`, `distribution`, `sales`, `profit`, `shrinkage`, `settlements`.
 
 CSV response:
 

@@ -18,8 +18,11 @@ import com.chick.app.report.dto.ProcurementReportRow;
 import com.chick.app.report.dto.ProfitReportRow;
 import com.chick.app.report.dto.ReportResult;
 import com.chick.app.report.dto.SettlementReportRow;
+import com.chick.app.report.dto.SalesReportRow;
 import com.chick.app.report.dto.ShrinkageReportRow;
 import com.chick.app.report.dto.StockReportRow;
+import com.chick.app.sales.domain.BranchSale;
+import com.chick.app.sales.repository.BranchSaleRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -60,6 +63,7 @@ public class ReportService {
 	private final DistributionRepository distributions;
 	private final InventoryMovementRepository movements;
 	private final BranchSettlementRepository settlements;
+	private final BranchSaleRepository branchSales;
 	private final ReportScopeService scopeService;
 
 	public ReportService(
@@ -68,12 +72,14 @@ public class ReportService {
 			DistributionRepository distributions,
 			InventoryMovementRepository movements,
 			BranchSettlementRepository settlements,
+			BranchSaleRepository branchSales,
 			ReportScopeService scopeService) {
 		this.procurements = procurements;
 		this.stockBatches = stockBatches;
 		this.distributions = distributions;
 		this.movements = movements;
 		this.settlements = settlements;
+		this.branchSales = branchSales;
 		this.scopeService = scopeService;
 	}
 
@@ -239,72 +245,111 @@ public class ReportService {
 		validateRange(from, to);
 		ReportScopeService.Scope scope = scopeService.resolve(branchId);
 
-		Specification<Distribution> specification =
-				(root, query, cb) -> cb.and(root.get("status").in(POSTED_DISTRIBUTION_STATUSES));
+		Specification<BranchSale> specification = (root, query, cb) -> cb.conjunction();
 		if (from != null) {
 			specification = specification.and(
-					(root, query, cb) -> cb.greaterThanOrEqualTo(root.get("distributionDate"), from));
+					(root, query, cb) -> cb.greaterThanOrEqualTo(root.get("saleDate"), from));
 		}
 		if (to != null) {
 			specification = specification.and(
-					(root, query, cb) -> cb.lessThanOrEqualTo(root.get("distributionDate"), to));
+					(root, query, cb) -> cb.lessThanOrEqualTo(root.get("saleDate"), to));
 		}
 		if (branchId != null) {
 			specification = specification.and(
 					(root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
 		}
 
-		Map<UUID, BranchTotals> byBranch = new LinkedHashMap<>();
-		for (Distribution distribution : distributions.findAll(specification)) {
-			if (!scope.allows(distribution.getBranch().getId())) {
+		Map<UUID, BranchSalesTotals> byBranch = new LinkedHashMap<>();
+		for (BranchSale sale : branchSales.findAll(specification)) {
+			if (!scope.allows(sale.getBranch().getId())) {
 				continue;
 			}
-			BranchTotals branchTotals = byBranch.computeIfAbsent(
-					distribution.getBranch().getId(),
-					id -> new BranchTotals(distribution.getBranch().getName()));
+			BranchSalesTotals branchTotals = byBranch.computeIfAbsent(
+					sale.getBranch().getId(),
+					id -> new BranchSalesTotals(sale.getBranch().getName()));
 			branchTotals.count++;
-			branchTotals.weight = branchTotals.weight.add(distribution.getTotalWeightKg());
-			branchTotals.revenue = branchTotals.revenue.add(distribution.getTotalRevenue());
-			branchTotals.cost = branchTotals.cost.add(distribution.getTotalCost());
-			branchTotals.expenses = branchTotals.expenses.add(distribution.getExpenseAmount());
+			branchTotals.totalSales = branchTotals.totalSales.add(sale.getTotalSales());
+			branchTotals.cost = branchTotals.cost.add(sale.getCostAmount());
 		}
 
 		List<ProfitReportRow> rows = new ArrayList<>();
-		BigDecimal totalRevenue = BigDecimal.ZERO;
+		BigDecimal totalSales = BigDecimal.ZERO;
 		BigDecimal totalCost = BigDecimal.ZERO;
-		BigDecimal totalExpenses = BigDecimal.ZERO;
-		BigDecimal totalWeight = BigDecimal.ZERO;
 		int totalCount = 0;
 
-		for (BranchTotals branchTotals : byBranch.values()) {
-			BigDecimal margin = branchTotals.revenue.subtract(branchTotals.cost).subtract(branchTotals.expenses);
+		for (BranchSalesTotals branchTotals : byBranch.values()) {
+			BigDecimal profit = branchTotals.totalSales.subtract(branchTotals.cost);
 			rows.add(new ProfitReportRow(
 					branchTotals.branchName,
 					branchTotals.count,
-					branchTotals.weight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP),
-					branchTotals.revenue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+					branchTotals.totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 					branchTotals.cost.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-					branchTotals.expenses.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-					margin.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-					percent(margin, branchTotals.revenue)));
+					profit.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+					percent(profit, branchTotals.totalSales)));
 			totalCount += branchTotals.count;
-			totalWeight = totalWeight.add(branchTotals.weight);
-			totalRevenue = totalRevenue.add(branchTotals.revenue);
+			totalSales = totalSales.add(branchTotals.totalSales);
 			totalCost = totalCost.add(branchTotals.cost);
-			totalExpenses = totalExpenses.add(branchTotals.expenses);
 		}
 
-		BigDecimal totalMargin = totalRevenue.subtract(totalCost).subtract(totalExpenses);
+		BigDecimal totalProfit = totalSales.subtract(totalCost);
 		Map<String, BigDecimal> totals = new LinkedHashMap<>();
-		totals.put("distributionCount", BigDecimal.valueOf(totalCount));
-		totals.put("weightKg", totalWeight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP));
-		totals.put("revenue", totalRevenue.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("cost", totalCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("expenseAmount", totalExpenses.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("margin", totalMargin.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("marginPercent", percent(totalMargin, totalRevenue));
+		totals.put("saleCount", BigDecimal.valueOf(totalCount));
+		totals.put("totalSales", totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("costAmount", totalCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("profit", totalProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("profitPercent", percent(totalProfit, totalSales));
 
 		return new ReportResult<>("profit", rows, totals);
+	}
+
+	@Transactional(readOnly = true)
+	public ReportResult<SalesReportRow> sales(LocalDate from, LocalDate to, UUID branchId) {
+		validateRange(from, to);
+		ReportScopeService.Scope scope = scopeService.resolve(branchId);
+
+		Specification<BranchSale> specification = (root, query, cb) -> cb.conjunction();
+		if (from != null) {
+			specification = specification.and(
+					(root, query, cb) -> cb.greaterThanOrEqualTo(root.get("saleDate"), from));
+		}
+		if (to != null) {
+			specification = specification.and(
+					(root, query, cb) -> cb.lessThanOrEqualTo(root.get("saleDate"), to));
+		}
+		if (branchId != null) {
+			specification = specification.and(
+					(root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
+		}
+
+		List<SalesReportRow> rows = new ArrayList<>();
+		BigDecimal totalSales = BigDecimal.ZERO;
+		BigDecimal totalCost = BigDecimal.ZERO;
+		BigDecimal totalProfit = BigDecimal.ZERO;
+
+		for (BranchSale sale : branchSales.findAll(specification)) {
+			if (!scope.allows(sale.getBranch().getId())) {
+				continue;
+			}
+			rows.add(new SalesReportRow(
+					sale.getReference(),
+					sale.getSaleDate(),
+					sale.getBranch().getName(),
+					sale.getTotalSales(),
+					sale.getCostAmount(),
+					sale.getProfit(),
+					percent(sale.getProfit(), sale.getTotalSales())));
+			totalSales = totalSales.add(sale.getTotalSales());
+			totalCost = totalCost.add(sale.getCostAmount());
+			totalProfit = totalProfit.add(sale.getProfit());
+		}
+
+		Map<String, BigDecimal> totals = new LinkedHashMap<>();
+		totals.put("totalSales", totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("costAmount", totalCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("profit", totalProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("profitPercent", percent(totalProfit, totalSales));
+
+		return new ReportResult<>("sales", rows, totals);
 	}
 
 	@Transactional(readOnly = true)
@@ -419,15 +464,13 @@ public class ReportService {
 		return amount.multiply(BigDecimal.valueOf(100)).divide(base, PERCENT_SCALE, RoundingMode.HALF_UP);
 	}
 
-	private static final class BranchTotals {
+	private static final class BranchSalesTotals {
 		final String branchName;
 		int count;
-		BigDecimal weight = BigDecimal.ZERO;
-		BigDecimal revenue = BigDecimal.ZERO;
+		BigDecimal totalSales = BigDecimal.ZERO;
 		BigDecimal cost = BigDecimal.ZERO;
-		BigDecimal expenses = BigDecimal.ZERO;
 
-		BranchTotals(String branchName) {
+		BranchSalesTotals(String branchName) {
 			this.branchName = branchName;
 		}
 	}

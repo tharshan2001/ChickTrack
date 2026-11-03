@@ -23,6 +23,7 @@ Cards:
 - Current stock weight.
 - Stock value.
 - Distribution weight and revenue for the selected range.
+- Total sales, sales cost, and profit for the selected range.
 - Branch outstanding balance.
 - Shrinkage and loss.
 
@@ -35,7 +36,8 @@ Implemented:
 - Procurement report.
 - Stock by batch report.
 - Distribution report.
-- Profit and margin report by branch.
+- Branch sales report.
+- Profit and loss report by branch (based on entered branch sales).
 - Shrinkage and loss report.
 - Branch settlements report.
 
@@ -68,6 +70,7 @@ Implemented:
 - `GET /api/v1/reports/procurement`
 - `GET /api/v1/reports/stock`
 - `GET /api/v1/reports/distribution`
+- `GET /api/v1/reports/sales`
 - `GET /api/v1/reports/profit`
 - `GET /api/v1/reports/shrinkage`
 - `GET /api/v1/reports/settlements`

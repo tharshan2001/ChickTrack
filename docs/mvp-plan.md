@@ -4,7 +4,7 @@
 
 Deliver a deployable backend that supports one pilot branch end-to-end:
 
-**OAuth2 login -> master data -> daily price -> procurement -> stock batch -> FIFO distribution -> branch receiving -> settlement -> report.**
+**OAuth2 login -> master data -> daily price -> procurement -> stock batch -> FIFO distribution -> branch receiving -> branch daily sales -> profit -> settlement -> report.**
 
 The mobile app is deferred.
 
@@ -23,6 +23,7 @@ The mobile app is deferred.
 - FIFO allocation with audited override.
 - Distribution, dispatch, branch receiving, discrepancy reasons.
 - Reversal documents for posted records.
+- Branch daily sales entry and profit marking.
 - Basic branch settlements.
 - Outstanding branch balances.
 - Dashboard and core reports with CSV/PDF exports.
@@ -61,8 +62,9 @@ The mobile app is deferred.
 4. Create procurement (stock batch is created automatically).
 5. Dispatch to branch.
 6. Confirm branch receipt.
-7. Settle the branch balance.
-8. Show one profitability report.
+7. Enter the branch total sales for the day.
+8. Settle the branch balance.
+9. Show one profitability report.
 
 ## Definition of Done
 
