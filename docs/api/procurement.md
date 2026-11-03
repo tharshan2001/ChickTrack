@@ -47,48 +47,9 @@ GET /api/v1/procurements?supplierId=...&status=RECEIVED&from=2026-01-01&to=2026-
 GET /api/v1/procurements/{id}
 ```
 
-## Approve
 
-```http
-POST /api/v1/procurements/{id}/approve
-```
 
-## Receive
 
-```http
-POST /api/v1/procurements/{id}/receipts
-Idempotency-Key: <uuid>
-```
-
-```json
-{
-  "receivedAt": "2026-01-15T10:00:00Z",
-  "items": [
-    {
-      "procurementItemId": "00000000-0000-0000-0000-000000000000",
-      "receivedWeightKg": "990.000"
-    }
-  ]
-}
-```
-
-## Add Expense
-
-```http
-POST /api/v1/procurements/{id}/expenses
-```
-
-## Reverse
-
-```http
-POST /api/v1/procurements/{id}/reverse
-```
-
-```json
-{
-  "reason": "Incorrect supplier invoice"
-}
-```
 
 ## Response
 
@@ -107,8 +68,7 @@ POST /api/v1/procurements/{id}/reverse
 ## Rules
 
 - Landed cost uses received weight.
-- Partial receipts are allowed until the approved quantity is reached.
-- Posted records are reversed, not edited.
+- Posted records are not edited.
 - Duplicate idempotency keys return the original result.
 
 ## Errors

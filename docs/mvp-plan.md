@@ -16,7 +16,7 @@ The mobile app is deferred.
 - DB-backed users, roles, branches, and branch scoping.
 - Master data: branches, suppliers, chicken types, expense categories.
 - Effective-dated daily prices.
-- Procurement with partial/full receiving.
+- Procurement with automatic batch creation.
 - Commission methods and procurement expenses.
 - Landed cost on received weight.
 - Stock batches, movement ledger, adjustments.

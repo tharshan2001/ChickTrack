@@ -123,6 +123,7 @@ public class ProcurementService {
 			item.setProcurement(procurement);
 			item.setChickenType(chickenType);
 			item.setCommissionValue(defaultZero(itemRequest.commissionValue()));
+			item.setReceivedWeightKg(itemRequest.paidWeightKg());
 			procurement.getItems().add(item);
 		}
 
@@ -142,124 +143,28 @@ public class ProcurementService {
 		}
 
 		recalculate(procurement);
-		return toResponse(procurements.save(procurement));
-	}
+		procurement.setStatus(ProcurementStatus.RECEIVED);
+		Procurement saved = procurements.save(procurement);
 
-	@Transactional
-	public ProcurementResponse approve(UUID id) {
-		Procurement procurement = find(id);
-		if (procurement.getStatus() != ProcurementStatus.DRAFT) {
-			throw new BusinessException("INVALID_STATUS_TRANSITION",
-					"Only draft procurements can be approved", HttpStatus.CONFLICT);
-		}
-		if (procurement.getItems().isEmpty()) {
-			throw new BusinessException("BUSINESS_RULE_VIOLATION",
-					"Procurement must have at least one item", HttpStatus.BAD_REQUEST);
-		}
-		procurement.setStatus(ProcurementStatus.APPROVED);
-		return toResponse(procurements.save(procurement));
-	}
-
-	@Transactional
-	public ProcurementResponse addExpense(UUID id, ProcurementExpenseRequest request) {
-		Procurement procurement = find(id);
-		if (procurement.getStatus() == ProcurementStatus.REVERSED || procurement.getStatus() == ProcurementStatus.CLOSED) {
-			throw new BusinessException("INVALID_STATUS_TRANSITION",
-					"Expenses cannot be added to this procurement", HttpStatus.CONFLICT);
-		}
-		ExpenseCategory category = null;
-		if (request.categoryId() != null) {
-			category = expenseCategories.findById(request.categoryId())
-					.orElseThrow(() -> new ResourceNotFoundException("ExpenseCategory", request.categoryId()));
-		}
-		ProcurementExpense expense = mapper.toExpense(request);
-		expense.setProcurement(procurement);
-		expense.setCategory(category);
-		expense.setAmount(request.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		procurement.getExpenses().add(expense);
-		recalculate(procurement);
-		return toResponse(procurements.save(procurement));
-	}
-
-	@Transactional
-	public ProcurementReceiptResponse receive(UUID id, ProcurementReceiptRequest request) {
-		Procurement procurement = find(id);
-		if (procurement.getStatus() != ProcurementStatus.APPROVED
-				&& procurement.getStatus() != ProcurementStatus.PARTIALLY_RECEIVED) {
-			throw new BusinessException("INVALID_STATUS_TRANSITION",
-					"Procurement must be approved before receiving", HttpStatus.CONFLICT);
-		}
-
-		ProcurementReceipt receipt = mapper.toReceipt(request);
-		receipt.setProcurement(procurement);
-		receipt.setReceivedAt(request.receivedAt());
-
-		for (ProcurementReceiptItemRequest itemRequest : request.items()) {
-			ProcurementItem item = procurement.getItems().stream()
-					.filter(candidate -> candidate.getId().equals(itemRequest.procurementItemId()))
-					.findFirst()
-					.orElseThrow(() -> new ResourceNotFoundException("ProcurementItem", itemRequest.procurementItemId()));
-
-			BigDecimal remaining = item.getPaidWeightKg().subtract(item.getReceivedWeightKg());
-			if (itemRequest.receivedWeightKg().compareTo(remaining) > 0) {
-				throw new BusinessException("BUSINESS_RULE_VIOLATION",
-						"Received weight exceeds remaining paid weight for item " + item.getId(),
-						HttpStatus.BAD_REQUEST);
-			}
-
-			item.setReceivedWeightKg(item.getReceivedWeightKg().add(itemRequest.receivedWeightKg())
-					.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP));
-
-			ProcurementReceiptItem receiptItem = mapper.toReceiptItem(itemRequest);
-			receiptItem.setReceipt(receipt);
-			receiptItem.setProcurementItem(item);
-			receiptItem.setReceivedWeightKg(itemRequest.receivedWeightKg().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP));
-			receipt.getItems().add(receiptItem);
-		}
-
-		recalculate(procurement);
-
-		for (ProcurementReceiptItem receiptItem : receipt.getItems()) {
-			ProcurementItem item = receiptItem.getProcurementItem();
+		for (ProcurementItem item : saved.getItems()) {
 			if (item.getReceivedWeightKg().compareTo(BigDecimal.ZERO) > 0 && item.getLandedCostPerKg() != null) {
 				StockBatch batch = new StockBatch();
 				batch.setProcurementItem(item);
 				batch.setChickenType(item.getChickenType());
-				batch.setReceivedWeightKg(receiptItem.getReceivedWeightKg());
-				batch.setRemainingWeightKg(receiptItem.getReceivedWeightKg());
+				batch.setReceivedWeightKg(item.getReceivedWeightKg());
+				batch.setRemainingWeightKg(item.getReceivedWeightKg());
 				batch.setLandedCostPerKg(item.getLandedCostPerKg());
-				batch.setReceivedAt(request.receivedAt());
+				batch.setReceivedAt(java.time.Instant.now());
 				stockBatches.save(batch);
 			}
 		}
 
-		procurement.getReceipts().add(receipt);
-
-		boolean allReceived = procurement.getItems().stream()
-				.allMatch(item -> item.getReceivedWeightKg().compareTo(item.getPaidWeightKg()) >= 0);
-		boolean anyReceived = procurement.getItems().stream()
-				.anyMatch(item -> item.getReceivedWeightKg().compareTo(BigDecimal.ZERO) > 0);
-		if (allReceived && anyReceived) {
-			procurement.setStatus(ProcurementStatus.RECEIVED);
-		} else {
-			procurement.setStatus(ProcurementStatus.PARTIALLY_RECEIVED);
-		}
-
-		procurements.save(procurement);
-		return mapper.toReceiptResponse(receipt);
+		return toResponse(saved);
 	}
 
-	@Transactional
-	public ProcurementResponse reverse(UUID id, ProcurementReverseRequest request) {
-		Procurement procurement = find(id);
-		if (procurement.getStatus() == ProcurementStatus.DRAFT || procurement.getStatus() == ProcurementStatus.REVERSED) {
-			throw new BusinessException("INVALID_STATUS_TRANSITION",
-					"Procurement cannot be reversed in its current status", HttpStatus.CONFLICT);
-		}
-		procurement.setStatus(ProcurementStatus.REVERSED);
-		procurement.setReversalReason(request.reason());
-		return toResponse(procurements.save(procurement));
-	}
+
+
+
 
 	private Procurement find(UUID id) {
 		return procurements.findById(id)

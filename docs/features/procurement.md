@@ -18,9 +18,7 @@ Record supplier purchases, commissions, expenses, and actual received weights.
 
 1. Create a procurement with supplier, chicken type, paid weight, purchase price, and expenses.
 2. Optional commission is calculated using the configured method.
-3. Procurement is approved.
-4. Stock is received in one or more receipts.
-5. A stock batch is created for each received item.
+3. A stock batch is created automatically for each procurement item.
 6. Landed cost is calculated using received weight.
 7. Posted records can only be corrected through reversal documents.
 
@@ -47,13 +45,9 @@ Received weight: 990 kg
 Landed cost: 830,000 / 990 = 838.3838 per kg
 ```
 
-## Status Flow
+## Status
 
-```text
-DRAFT -> APPROVED -> PARTIALLY_RECEIVED -> RECEIVED -> CLOSED
-```
-
-A posted procurement can be reversed, not edited.
+Procurements are created as `RECEIVED` and are not edited after creation. Corrections use reversal documents.
 
 ## Data
 
@@ -71,17 +65,11 @@ Planned:
 - `POST /api/v1/procurements`
 - `GET /api/v1/procurements`
 - `GET /api/v1/procurements/{id}`
-- `POST /api/v1/procurements/{id}/approve`
-- `POST /api/v1/procurements/{id}/receipts`
-- `POST /api/v1/procurements/{id}/expenses`
-- `POST /api/v1/procurements/{id}/reverse`
 
 See [Procurement API](../api/procurement.md).
 
 ## Acceptance Criteria
 
-- Partial receipts update status correctly.
+- Procurement creates stock batches automatically.
 - Landed cost uses received weight.
 - Commission methods produce expected totals.
-- Reversal preserves the original document.
-- Concurrent operations cannot over-receive an approved quantity.
