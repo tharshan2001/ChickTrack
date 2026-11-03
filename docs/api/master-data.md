@@ -66,15 +66,6 @@ Roles are seeded by Flyway.
 | `PUT` | `/chicken-types/{id}` | `OWNER`, `PROCUREMENT_MANAGER` |
 | `PATCH` | `/chicken-types/{id}/status` | `OWNER`, `PROCUREMENT_MANAGER` |
 
-## Warehouses
-
-| Method | Path | Role |
-|---|---|---|
-| `GET` | `/warehouses` | Any authenticated |
-| `POST` | `/warehouses` | `OWNER`, `WAREHOUSE_MANAGER` |
-| `PUT` | `/warehouses/{id}` | `OWNER`, `WAREHOUSE_MANAGER` |
-| `PATCH` | `/warehouses/{id}/status` | `OWNER`, `WAREHOUSE_MANAGER` |
-
 ## Expense Categories
 
 | Method | Path | Role |

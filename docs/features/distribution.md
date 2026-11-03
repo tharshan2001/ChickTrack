@@ -6,7 +6,7 @@ Planned.
 
 ## Purpose
 
-Move stock from the warehouse to branches, record delivery, and capture discrepancies.
+Move stock to branches, record delivery, and capture discrepancies.
 
 ## Actors
 

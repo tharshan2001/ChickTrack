@@ -35,11 +35,6 @@ Maintain the reference data required by procurement, inventory, distribution, an
 - Active flag.
 - Used by prices, procurement, batches, and distribution.
 
-### Warehouses
-
-- Name and location.
-- Active flag.
-- Owns stock batches.
 
 ### Expense Categories
 
@@ -63,7 +58,6 @@ Maintain the reference data required by procurement, inventory, distribution, an
 - `user_branches`
 - `suppliers` (planned)
 - `chicken_types` (planned)
-- `warehouses` (planned)
 - `expense_categories` (planned)
 
 ## API
@@ -75,7 +69,6 @@ Planned under `/api/v1`:
 - `/roles`
 - `/suppliers`
 - `/chicken-types`
-- `/warehouses`
 - `/expense-categories`
 
 See [Master Data API](../api/master-data.md).

@@ -45,7 +45,7 @@ Planned tables:
 
 ## FIFO
 
-1. Select batches for the chicken type and warehouse ordered by received date.
+1. Select batches for the chicken type ordered by received date.
 2. Lock candidate rows with `SELECT ... FOR UPDATE`.
 3. Allocate available weight until the requested quantity is satisfied.
 4. Create distribution line splits per batch.

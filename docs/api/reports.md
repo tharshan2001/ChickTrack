@@ -35,7 +35,7 @@ GET /api/v1/reports/procurement?from=2026-01-01&to=2026-01-31&supplierId=...
 ## Stock Report
 
 ```http
-GET /api/v1/reports/stock?warehouseId=...&chickenTypeId=...&asOf=2026-01-31
+GET /api/v1/reports/stock?chickenTypeId=...&asOf=2026-01-31
 ```
 
 ## Distribution Report

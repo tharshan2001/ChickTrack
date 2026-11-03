@@ -14,7 +14,7 @@ The mobile app is deferred.
 
 - OAuth2 Authorization Code + PKCE.
 - DB-backed users, roles, branches, and branch scoping.
-- Master data: branches, suppliers, chicken types, warehouses, expense categories.
+- Master data: branches, suppliers, chicken types, expense categories.
 - Effective-dated daily prices.
 - Procurement with partial/full receiving.
 - Commission methods and procurement expenses.

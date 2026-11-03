@@ -30,7 +30,7 @@ com.chick.app/
 ├── identity/        users, roles, user details, bootstrap admin
 ├── branch/          branches
 ├── supplier/        suppliers                      planned
-├── chicken/         chicken types, warehouses     planned
+├── chicken/         chicken types                 planned
 ├── pricing/         daily prices                  planned
 ├── procurement/     procurement and receiving     planned
 ├── expense/         expenses and allocations      planned

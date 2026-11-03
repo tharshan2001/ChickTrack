@@ -7,7 +7,7 @@ Planned.
 ## List Stock Batches
 
 ```http
-GET /api/v1/stock-batches?chickenTypeId=...&warehouseId=...&active=true&minRemainingWeight=1
+GET /api/v1/stock-batches?chickenTypeId=...&active=true&minRemainingWeight=1
 ```
 
 Example response:
@@ -19,7 +19,6 @@ Example response:
       "id": "00000000-0000-0000-0000-000000000000",
       "batchReference": "BAT-2026-000123",
       "chickenTypeId": "00000000-0000-0000-0000-000000000000",
-      "warehouseId": "00000000-0000-0000-0000-000000000000",
       "receivedWeightKg": "990.000",
       "remainingWeightKg": "600.000",
       "landedCostPerKg": "838.3838",
