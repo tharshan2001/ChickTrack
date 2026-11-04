@@ -40,12 +40,29 @@ app.oauth.client.mobile.redirect-uri=${OAUTH_MOBILE_REDIRECT_URI:chicktrack://oa
 5. Client calls `/api/**` with the bearer access token.
 6. Client refreshes through `/oauth2/token` using the refresh token.
 
+### In-app sign-in (mobile app)
+
+The mobile app has its own username and password screen. It posts the credentials to
+`/oauth2/token` with a ChickTrack extension grant (`security/PasswordGrant.java`):
+
+```
+POST /oauth2/token
+grant_type=urn:chicktrack:params:oauth:grant-type:password&client_id=chicktrack-mobile&username=…&password=…
+```
+
+The response is the same as the code exchange: a JWT access token with the user's roles and a
+rotating refresh token, saved as an OAuth2 authorization, so refresh, revocation and the sign-out
+that follows a role or password change all work as before. Wrong username, wrong password and
+disabled accounts all return `400 invalid_grant`. Only clients registered with this grant type may
+use it; `OAuthClientBootstrap` adds it to the mobile client on startup. The grant issues API
+scopes only (no `openid`, so no ID token).
+
 Access tokens live for 15 minutes. Refresh tokens live for 30 days and are rotated: every refresh returns a new refresh token and the old one stops working.
 
 The mobile client is a public client (no secret). Spring Authorization Server does not issue or accept refresh tokens for public clients by default, so ChickTrack adds two pieces in `security/`:
 
 - `RotatingRefreshTokenGenerator` issues refresh tokens to public clients on the authorization-code exchange (PKCE has already proven the caller).
-- `PublicClientRefreshAuthentication` accepts `grant_type=refresh_token` with only `client_id` for clients registered with `ClientAuthenticationMethod.NONE`; the single-use refresh token is the credential.
+- `PublicClientRefreshAuthentication` accepts `grant_type=refresh_token` (and the in-app password grant) with only `client_id` for clients registered with `ClientAuthenticationMethod.NONE`; the single-use refresh token is the credential.
 
 Refresh request:
 

@@ -371,6 +371,41 @@ def main():
     s, j, _ = admin.call("GET", f"/distributions/{uuid.uuid4()}")
     check(A, "error envelope has code, message, timestamp", s == 404 and {"code", "message", "timestamp"} <= set(j or {}), j)
 
+    # ---------------------------------------------------------------- in-app sign-in (password grant)
+    A = "App sign-in"
+    GRANT = "urn:chicktrack:params:oauth:grant-type:password"
+    def app_login(username, password, client=oauth.CLIENT):
+        return requests.post(BASE + "/oauth2/token", data=dict(grant_type=GRANT, client_id=client,
+                             username=username, password=password))
+    r = app_login(ADMIN_USERNAME, ADMIN_PASSWORD)
+    tj = r.json() if r.status_code == 200 else {}
+    check(A, "owner signs in -> 200 with access + refresh token", r.status_code == 200 and tj.get("access_token") and tj.get("refresh_token"), r.text[:200])
+    if tj:
+        me2 = requests.get(API + "/me", headers={"Authorization": "Bearer " + tj["access_token"]})
+        check(A, "token works on /me with OWNER role", me2.status_code == 200 and "OWNER" in me2.json()["data"]["roles"], me2.text[:200])
+        rr = oauth.refresh(tj["refresh_token"])
+        check(A, "refresh works", rr.status_code == 200 and rr.json().get("refresh_token") != tj["refresh_token"], rr.text[:200])
+        check(A, "old refresh token is rotated out", oauth.refresh(tj["refresh_token"]).status_code == 400)
+    r = app_login(ADMIN_USERNAME, "wrong-password")
+    check(A, "wrong password -> 400 invalid_grant", r.status_code == 400 and r.json().get("error") == "invalid_grant", r.text[:200])
+    r = app_login("nobody" + SFX, "whatever-123")
+    check(A, "unknown user -> 400 invalid_grant", r.status_code == 400 and r.json().get("error") == "invalid_grant", r.text[:200])
+    r = app_login(ADMIN_USERNAME, ADMIN_PASSWORD, client="not-a-client")
+    check(A, "unknown client -> 401", r.status_code == 401, r.status_code)
+    r = requests.post(BASE + "/oauth2/token", data=dict(grant_type=GRANT, client_id=oauth.CLIENT, username=ADMIN_USERNAME))
+    check(A, "missing password -> 400 invalid_request", r.status_code == 400 and r.json().get("error") == "invalid_request", r.text[:200])
+    expect(A, "deactivate for sign-in check", admin.call("PATCH", f"/users/{u_none['id']}/status", {"active": False}), 200)
+    r = app_login(u_none["username"], pw)
+    check(A, "inactive user -> 400 invalid_grant", r.status_code == 400 and r.json().get("error") == "invalid_grant", r.text[:200])
+    admin.call("PATCH", f"/users/{u_none['id']}/status", {"active": True})
+    r = app_login(u_kandy["username"], pw)
+    if r.status_code == 200:
+        kt = r.json()["access_token"]
+        mine = requests.get(API + f"/branches/{colombo['id']}/stock", headers={"Authorization": "Bearer " + kt})
+        check(A, "branch user keeps branch limits", mine.status_code == 403, mine.status_code)
+    else:
+        check(A, "branch user signs in", False, r.text[:200])
+
     # ---------------------------------------------------------------- role change revokes
     A = "Sessions"
     tok = oauth.login(u_view["username"], pw)

@@ -46,14 +46,17 @@ public class OAuthClientBootstrap implements ApplicationRunner {
 		if (existing != null) {
 			// Keep the configured redirect URIs in step with the environment (a new LAN address for
 			// Expo Go, say) without editing the database by hand.
-			if (!existing.getRedirectUris().equals(redirectUris)) {
+			boolean redirectsChanged = !existing.getRedirectUris().equals(redirectUris);
+			boolean missingPasswordGrant = !existing.getAuthorizationGrantTypes().contains(PasswordGrant.GRANT_TYPE);
+			if (redirectsChanged || missingPasswordGrant) {
 				clients.save(RegisteredClient.from(existing)
 						.redirectUris(uris -> {
 							uris.clear();
 							uris.addAll(redirectUris);
 						})
+						.authorizationGrantType(PasswordGrant.GRANT_TYPE)
 						.build());
-				log.info("Updated redirect URIs of OAuth2 client '{}' to {}", clientId, redirectUris);
+				log.info("Updated OAuth2 client '{}': redirect URIs {}, in-app sign-in enabled", clientId, redirectUris);
 			}
 			return;
 		}
@@ -64,6 +67,7 @@ public class OAuthClientBootstrap implements ApplicationRunner {
 				.clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
 				.authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
 				.authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+				.authorizationGrantType(PasswordGrant.GRANT_TYPE)
 				.redirectUris(uris -> uris.addAll(redirectUris))
 				.scope(OidcScopes.OPENID)
 				.scope(OidcScopes.PROFILE)

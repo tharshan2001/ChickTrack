@@ -51,7 +51,14 @@ public class SecurityConfig {
 	@Order(1)
 	SecurityFilterChain authorizationServerSecurityFilterChain(
 			HttpSecurity http,
-			RegisteredClientRepository registeredClients) throws Exception {
+			RegisteredClientRepository registeredClients,
+			OAuth2AuthorizationService authorizationService,
+			org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator<? extends org.springframework.security.oauth2.core.OAuth2Token> tokenGenerator,
+			org.springframework.security.core.userdetails.UserDetailsService userDetailsService,
+			PasswordEncoder passwordEncoder) throws Exception {
+		org.springframework.security.authentication.dao.DaoAuthenticationProvider users =
+				new org.springframework.security.authentication.dao.DaoAuthenticationProvider(userDetailsService);
+		users.setPasswordEncoder(passwordEncoder);
 		OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
 				new OAuth2AuthorizationServerConfigurer();
 		http
@@ -62,7 +69,11 @@ public class SecurityConfig {
 								.authenticationConverters(converters ->
 										converters.add(0, new PublicClientRefreshAuthentication.Converter()))
 								.authenticationProviders(providers ->
-										providers.add(0, new PublicClientRefreshAuthentication.Provider(registeredClients)))))
+										providers.add(0, new PublicClientRefreshAuthentication.Provider(registeredClients))))
+						// Username and password typed in the mobile app (see PasswordGrant).
+						.tokenEndpoint(tokenEndpoint -> tokenEndpoint
+								.accessTokenRequestConverter(new PasswordGrant.Converter())
+								.authenticationProvider(new PasswordGrant.Provider(users, authorizationService, tokenGenerator))))
 				.authorizeHttpRequests((authorize) -> authorize.anyRequest().authenticated())
 				.exceptionHandling((exceptions) -> exceptions.defaultAuthenticationEntryPointFor(
 						new LoginUrlAuthenticationEntryPoint("/login"),
