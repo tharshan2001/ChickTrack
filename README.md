@@ -76,6 +76,11 @@ The `.env` file is used by Docker Compose and can also be loaded into the shell 
 
 The API starts on `http://localhost:8080`.
 
+To use it from a phone on the same Wi-Fi (the mobile app in Expo Go or a development build), run
+`./scripts/run-lan.sh` instead. It loads `.env`, sets `OAUTH_ISSUER` to the Mac's LAN address and
+allows the Expo Go sign-in redirect. `OAUTH_MOBILE_REDIRECT_URI` takes a comma-separated list, and the
+saved OAuth client is updated to match on every start.
+
 Flyway creates the schema on startup. On first run, a bootstrap admin is created from `OAUTH_ADMIN_USERNAME` and `OAUTH_ADMIN_PASSWORD`.
 
 ### 4. Open the API surface

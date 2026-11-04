@@ -1,6 +1,9 @@
 package com.chick.app.security;
 
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,7 +25,7 @@ public class OAuthClientBootstrap implements ApplicationRunner {
 
 	private final RegisteredClientRepository clients;
 	private final String clientId;
-	private final String redirectUri;
+	private final Set<String> redirectUris;
 
 	public OAuthClientBootstrap(
 			RegisteredClientRepository clients,
@@ -30,12 +33,28 @@ public class OAuthClientBootstrap implements ApplicationRunner {
 			@Value("${app.oauth.client.mobile.redirect-uri:chicktrack://oauth2/callback}") String redirectUri) {
 		this.clients = clients;
 		this.clientId = clientId;
-		this.redirectUri = redirectUri;
+		// Comma-separated, e.g. "chicktrack://oauth2/callback,exp://192.168.1.20:8081/--/oauth2/callback".
+		this.redirectUris = new LinkedHashSet<>(Arrays.stream(redirectUri.split(","))
+				.map(String::trim)
+				.filter(uri -> !uri.isEmpty())
+				.toList());
 	}
 
 	@Override
 	public void run(ApplicationArguments args) {
-		if (clients.findByClientId(clientId) != null) {
+		RegisteredClient existing = clients.findByClientId(clientId);
+		if (existing != null) {
+			// Keep the configured redirect URIs in step with the environment (a new LAN address for
+			// Expo Go, say) without editing the database by hand.
+			if (!existing.getRedirectUris().equals(redirectUris)) {
+				clients.save(RegisteredClient.from(existing)
+						.redirectUris(uris -> {
+							uris.clear();
+							uris.addAll(redirectUris);
+						})
+						.build());
+				log.info("Updated redirect URIs of OAuth2 client '{}' to {}", clientId, redirectUris);
+			}
 			return;
 		}
 
@@ -45,7 +64,7 @@ public class OAuthClientBootstrap implements ApplicationRunner {
 				.clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
 				.authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
 				.authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-				.redirectUri(redirectUri)
+				.redirectUris(uris -> uris.addAll(redirectUris))
 				.scope(OidcScopes.OPENID)
 				.scope(OidcScopes.PROFILE)
 				.scope("api.read")
