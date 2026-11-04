@@ -2,34 +2,38 @@
 
 ## Status
 
-Planned.
+Implemented.
+
+Read: `OWNER`, `WAREHOUSE_MANAGER`, `DISTRIBUTION_MANAGER`, `PROCUREMENT_MANAGER`, `ACCOUNTANT`.
+Adjust: `OWNER`, `WAREHOUSE_MANAGER`.
 
 ## List Stock Batches
 
 ```http
-GET /api/v1/stock-batches?chickenTypeId=...&active=true&minRemainingWeight=1
+GET /api/v1/stock-batches?chickenTypeId=...&available=true&page=0&size=20
 ```
 
-Example response:
+`available=true` returns batches with remaining weight, `false` returns empty batches.
 
 ```json
 {
-  "content": [
-    {
-      "id": "00000000-0000-0000-0000-000000000000",
-      "batchReference": "BAT-2026-000123",
-      "chickenTypeId": "00000000-0000-0000-0000-000000000000",
-      "receivedWeightKg": "990.000",
-      "remainingWeightKg": "600.000",
-      "landedCostPerKg": "838.3838",
-      "receivedAt": "2026-01-15T10:00:00Z",
-      "ageDays": 12
-    }
-  ],
-  "page": 0,
-  "size": 20,
-  "totalElements": 1,
-  "totalPages": 1
+  "data": {
+    "content": [
+      {
+        "id": "00000000-0000-0000-0000-000000000000",
+        "chickenTypeId": "00000000-0000-0000-0000-000000000000",
+        "chickenTypeName": "Broiler",
+        "procurementItemId": "00000000-0000-0000-0000-000000000000",
+        "receivedWeightKg": "990.000",
+        "remainingWeightKg": "600.000",
+        "landedCostPerKg": "838.3838",
+        "remainingValue": "503030.28",
+        "receivedAt": "2026-01-15T10:00:00Z",
+        "ageDays": 12
+      }
+    ],
+    "page": 0, "size": 20, "totalElements": 1, "totalPages": 1
+  }
 }
 ```
 
@@ -45,37 +49,60 @@ GET /api/v1/stock-batches/{id}
 GET /api/v1/inventory-movements?batchId=...&type=DISTRIBUTION&from=2026-01-01&to=2026-01-31
 ```
 
-## Create Adjustment
+Dates are business days in `Asia/Colombo`, both inclusive. Newest first.
+
+## Stock Adjustments
 
 ```http
+GET  /api/v1/stock-adjustments?batchId=...
 POST /api/v1/stock-adjustments
 Idempotency-Key: <uuid>
 ```
 
 ```json
 {
-  "batchId": "00000000-0000-0000-0000-000000000000",
+  "stockBatchId": "00000000-0000-0000-0000-000000000000",
   "type": "DAMAGE",
   "weightKg": "5.000",
   "reason": "Crate damage during handling"
 }
 ```
 
-## Movement Types
+| Type | Effect on remaining weight |
+|---|---|
+| `DAMAGE` | decreases |
+| `LOSS` | decreases |
+| `RETURN` | increases |
+| `ADJUSTMENT` | increases or decreases; send `"direction": "INCREASE"` or `"DECREASE"` |
 
-`RECEIPT`, `DISTRIBUTION`, `RETURN`, `DAMAGE`, `LOSS`, `ADJUSTMENT`, `REVERSAL`
+Response:
+
+```json
+{
+  "data": {
+    "id": "...",
+    "reference": "ADJ-2026-000001",
+    "stockBatchId": "...",
+    "type": "DAMAGE",
+    "weightChangeKg": "-5.000",
+    "remainingWeightKg": "595.000",
+    "reason": "Crate damage during handling",
+    "createdAt": "2026-11-04T10:00:00Z"
+  }
+}
+```
 
 ## Rules
 
-- Remaining weight cannot be negative.
-- Adjustments require a reason.
-- All movements are append-only.
-- Batches are locked during allocation.
-- Final issue consumes remaining batch cost.
+- The batch is locked while it is adjusted.
+- Remaining weight cannot go below zero (`INSUFFICIENT_STOCK`) or above the batch's received weight (`BUSINESS_RULE_VIOLATION`).
+- Every adjustment writes a `stock_adjustments` row and a matching `inventory_movements` row with `referenceType = STOCK_ADJUSTMENT`. Both are append-only; correct a mistake with an opposite adjustment.
+- A reason is required. Adjustments are audited.
 
 ## Errors
 
 - `VALIDATION_FAILED`
 - `RESOURCE_NOT_FOUND`
 - `INSUFFICIENT_STOCK`
-- `CONFLICT`
+- `BUSINESS_RULE_VIOLATION`
+- `FORBIDDEN`

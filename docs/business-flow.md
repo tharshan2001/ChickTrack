@@ -6,9 +6,9 @@ This document is the single reference for how ChickTrack works end to end: who d
 
 | Role | Purpose | Main APIs |
 |---|---|---|
-| `OWNER` | Full access, owns settings and reports | everything |
+| `OWNER` | Full access, users and roles, settings and reports | everything, including `/users`, `/roles` |
 | `PROCUREMENT_MANAGER` | Suppliers, purchase prices, procurement | `/procurements`, `/suppliers`, `/daily-prices` |
-| `WAREHOUSE_MANAGER` | Stock, batches, adjustments | (inventory APIs pending) |
+| `WAREHOUSE_MANAGER` | Stock, batches, adjustments | `/stock-batches`, `/inventory-movements`, `/stock-adjustments` |
 | `DISTRIBUTION_MANAGER` | Distribution, dispatch, reversal | `/distributions` |
 | `BRANCH_RECEIVER` | Branch receiving and daily sales entry | `/distributions/{id}/receipts`, `/branch-sales` |
 | `ACCOUNTANT` | Settlements, balances, reports | `/branch-settlements`, `/reports/*`, `/dashboard` |
@@ -123,7 +123,8 @@ Rules:
 - `stock_batches` hold received weight, remaining weight, landed cost, and receipt time.
 - `inventory_movements` is the ledger of weight changes: `RECEIPT`, `DISTRIBUTION`, `LOSS`, `DAMAGE`, `RETURN`, `ADJUSTMENT`, `REVERSAL`.
 - Procurement writes a `RECEIPT` movement for every batch it creates, so warehouse stock reconciles as `RECEIPT - DISTRIBUTION = remaining weight`.
-- `LOSS` and `DAMAGE` movements are branch-side discrepancies: the weight already left the warehouse at dispatch, so they do not reduce batch remaining weight.
+- `LOSS` and `DAMAGE` movements that reference a distribution are branch-side discrepancies: the weight already left the warehouse at dispatch, so they do not reduce batch remaining weight.
+- Warehouse stock adjustments (`DAMAGE`, `LOSS`, `RETURN`, `ADJUSTMENT`, reference `STOCK_ADJUSTMENT`) do change remaining weight and are recorded in `stock_adjustments`. Warehouse stock reconciles as `RECEIPT - DISTRIBUTION + REVERSAL + adjustments = remaining weight`.
 - Remaining weight is updated inside the same transaction as the distribution and can never go negative.
 - FIFO is used **only** for warehouse issues: batches are ordered by receipt time and locked with `SELECT ... FOR UPDATE` before allocation.
 
@@ -216,13 +217,11 @@ The branch does not report quantities or chicken types and no FIFO costing happe
 | Pricing | `daily_prices` |
 | Margins | `company_margin_rules` |
 | Procurement | `procurements`, `procurement_items`, `procurement_expenses`, `procurement_receipts`, `procurement_receipt_items` |
-| Inventory | `stock_batches`, `inventory_movements` |
+| Inventory | `stock_batches`, `inventory_movements`, `stock_adjustments` |
 | Distribution | `distributions`, `distribution_items`, `distribution_expenses`, `expense_allocations`, `branch_receipts`, `branch_receipt_items` |
 | Sales | `branch_sales`, `branch_sale_items` |
 | Finance | `branch_settlements`, `branch_settlement_allocations` |
 
 ## 7. Not Yet Implemented
 
-- Inventory read and adjustment APIs (`stock-batches`, `inventory-movements`, `stock-adjustments`).
-- User and role administration API (branch users cannot be created yet).
 - Push notifications, photo attachments, Excel exports.

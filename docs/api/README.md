@@ -82,15 +82,16 @@ Errors use the standard format described in [Errors](errors.md).
 |---|---|---|
 | OAuth2 | `/oauth2/*` | Implemented |
 | OIDC | `/.well-known/*`, `/userinfo` | Implemented |
-| Master data | `/api/v1/*` | Planned |
-| Pricing | `/api/v1/daily-prices` | Planned |
+| Users and roles | `/api/v1/users`, `/api/v1/roles`, `/api/v1/me` | Implemented ([docs](users.md)) |
+| Master data | `/api/v1/branches`, `/suppliers`, `/chicken-types`, `/expense-categories` | Implemented |
+| Pricing | `/api/v1/daily-prices` | Implemented |
 | Company margins | `/api/v1/company-margin-rules` | Implemented |
-| Procurement | `/api/v1/procurements` | Planned |
-| Inventory | `/api/v1/stock-batches` | Planned |
-| Distribution | `/api/v1/distributions` | Planned |
+| Procurement | `/api/v1/procurements` | Implemented |
+| Inventory | `/api/v1/stock-batches`, `/inventory-movements`, `/stock-adjustments` | Implemented ([docs](inventory.md)) |
+| Distribution | `/api/v1/distributions` | Implemented |
 | Branch sales | `/api/v1/branch-sales` | Implemented |
-| Finance | `/api/v1/branch-settlements` | Planned |
-| Reports | `/api/v1/reports` | Implemented |
+| Finance | `/api/v1/branch-settlements`, `/api/v1/branches/{id}/balance` | Implemented |
+| Reports | `/api/v1/reports`, `/api/v1/dashboard` | Implemented |
 
 ## OpenAPI
 

@@ -18,7 +18,7 @@ The project foundation is in place:
 - Docker Compose for PostgreSQL and MinIO
 - Feature and API documentation
 
-Business modules are the next implementation phase.
+All MVP backend modules are implemented: master data, users and roles, pricing, procurement, inventory, distribution, branch sales, settlements, reports, audit and idempotency. Next: the mobile app and pilot hardening.
 
 ## Tech Stack
 

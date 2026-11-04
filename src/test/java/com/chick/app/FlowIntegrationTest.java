@@ -12,7 +12,12 @@ import com.chick.app.common.service.DocumentNumberService;
 import com.chick.app.distribution.dto.*;
 import com.chick.app.distribution.domain.DiscrepancyReason;
 import com.chick.app.distribution.service.DistributionService;
-import com.chick.app.identity.domain.UserAccount;
+import com.chick.app.identity.dto.UserBranchesRequest;
+import com.chick.app.identity.dto.UserCreateRequest;
+import com.chick.app.identity.dto.UserRolesRequest;
+import com.chick.app.identity.dto.UserStatusRequest;
+import com.chick.app.inventory.domain.StockAdjustment;
+import com.chick.app.inventory.dto.StockAdjustmentRequest;
 import com.chick.app.identity.repository.RoleRepository;
 import com.chick.app.identity.repository.UserAccountRepository;
 import com.chick.app.inventory.repository.StockBatchRepository;
@@ -63,6 +68,8 @@ class FlowIntegrationTest {
 	@Autowired SettlementService settlements; @Autowired StockBatchRepository batches;
 	@Autowired DocumentNumberService numbers; @Autowired UserAccountRepository users; @Autowired RoleRepository roles;
 	@Autowired TransactionTemplate tx;
+	@Autowired com.chick.app.identity.service.UserService userService;
+	@Autowired com.chick.app.inventory.service.InventoryService inventory;
 	@Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
 	static void as(String user) {
@@ -137,22 +144,44 @@ class FlowIntegrationTest {
 		assertThat(audited).isEqualTo(3);
 
 		// A branch receiver with no branches sees nothing; with one branch sees only it.
-		UserAccount receiver = new UserAccount();
-		receiver.setUsername("recv" + sfx); receiver.setPasswordHash("{noop}x"); receiver.setFullName("R");
-		receiver.getRoles().add(roles.findByName("BRANCH_RECEIVER").orElseThrow());
-		users.save(receiver);
+		var receiver = userService.create(new UserCreateRequest("recv" + sfx, "receiver-pass-1", "Receiver", null, null,
+				Set.of("BRANCH_RECEIVER"), Set.of()));
+		assertThat(receiver.roles()).containsExactly("BRANCH_RECEIVER");
 		as("recv" + sfx);
 		assertThat(sales.list(Pageable.unpaged(), null, null, null).getTotalElements()).isZero();
 		assertThatThrownBy(() -> settlements.branchBalance(branch)).isInstanceOf(BusinessException.class);
 
 		as("admin");
-		tx.executeWithoutResult(s -> {
-			UserAccount r = users.findByUsername("recv" + sfx).orElseThrow();
-			r.getBranches().add(entityRef(branch));
-		});
+		userService.setBranches(receiver.id(), new UserBranchesRequest(Set.of(branch)));
 		as("recv" + sfx);
 		assertThat(sales.list(Pageable.unpaged(), null, null, null).getTotalElements()).isEqualTo(1);
 		assertThatThrownBy(() -> sales.list(Pageable.unpaged(), other, null, null)).isInstanceOf(BusinessException.class);
+
+		// The last active owner cannot be demoted or deactivated, nor can admins lock themselves out.
+		as("admin");
+		UUID adminId = userService.me().id();
+		assertThatThrownBy(() -> userService.setStatus(adminId, new UserStatusRequest(false)))
+				.isInstanceOf(BusinessException.class);
+		assertThatThrownBy(() -> userService.setRoles(adminId, new UserRolesRequest(Set.of("ACCOUNTANT"))))
+				.isInstanceOf(BusinessException.class);
+		assertThatThrownBy(() -> userService.create(new UserCreateRequest("RECV" + sfx, "another-pass", "Dup", null, null,
+				Set.of("VIEWER"), Set.of()))).isInstanceOf(BusinessException.class).hasMessageContaining("exists");
+
+		// Warehouse adjustments change the batch and the ledger together.
+		var damage = inventory.adjust(new StockAdjustmentRequest(batchId, StockAdjustment.Type.DAMAGE,
+				new BigDecimal("5"), null, "Crate damage"));
+		assertThat(damage.remainingWeightKg()).isEqualByComparingTo("15");
+		assertThatThrownBy(() -> inventory.adjust(new StockAdjustmentRequest(batchId, StockAdjustment.Type.LOSS,
+				new BigDecimal("16"), null, "Too much"))).isInstanceOf(BusinessException.class);
+		assertThatThrownBy(() -> inventory.adjust(new StockAdjustmentRequest(batchId, StockAdjustment.Type.ADJUSTMENT,
+				new BigDecimal("1"), null, "No direction"))).isInstanceOf(BusinessException.class);
+		inventory.adjust(new StockAdjustmentRequest(batchId, StockAdjustment.Type.ADJUSTMENT,
+				new BigDecimal("2"), StockAdjustmentRequest.Direction.INCREASE, "Recount"));
+		assertThat(inventory.getBatch(batchId).remainingWeightKg()).isEqualByComparingTo("17");
+		assertThat(inventory.listMovements(Pageable.unpaged(), batchId, null, null, null).getTotalElements())
+				.isEqualTo(5); // receipt, distribution, receiving loss, damage, adjustment
+		assertThat(inventory.listMovements(Pageable.unpaged(), batchId, null, null, null).getContent())
+				.extracting(m -> m.type()).contains("RECEIPT", "DISTRIBUTION", "LOSS", "DAMAGE", "ADJUSTMENT");
 
 		// Document numbers under concurrency for a fresh type.
 		as("admin");
@@ -166,6 +195,4 @@ class FlowIntegrationTest {
 		assertThat(unique).hasSize(16);
 	}
 
-	@Autowired jakarta.persistence.EntityManager em;
-	com.chick.app.branch.domain.Branch entityRef(UUID id) { return em.getReference(com.chick.app.branch.domain.Branch.class, id); }
 }
