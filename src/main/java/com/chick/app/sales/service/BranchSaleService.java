@@ -21,6 +21,7 @@ import com.chick.app.sales.domain.BranchSale;
 import com.chick.app.sales.domain.BranchSaleItem;
 import com.chick.app.sales.dto.BranchSaleCreateRequest;
 import com.chick.app.sales.dto.BranchSaleResponse;
+import com.chick.app.sales.dto.BranchStockResponse;
 import com.chick.app.sales.mapper.BranchSaleMapper;
 import com.chick.app.sales.repository.BranchSaleRepository;
 import java.math.BigDecimal;
@@ -166,6 +167,16 @@ public class BranchSaleService {
 		Map<UUID, BigDecimal> available = new HashMap<>();
 		branchStock(branch, null).forEach((chickenTypeId, stock) -> available.put(chickenTypeId, stock.availableWeight()));
 		return available;
+	}
+
+	/** Stock on hand at a branch per chicken type, for branch users and the owner. */
+	@Transactional(readOnly = true)
+	public List<BranchStockResponse> stock(UUID branchId) {
+		branchAccess.require(branchId);
+		return availableWeightByChickenType(branchId).entrySet().stream()
+				.map(e -> new BranchStockResponse(e.getKey(), e.getValue()))
+				.sorted(java.util.Comparator.comparing(r -> r.chickenTypeId().toString()))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)

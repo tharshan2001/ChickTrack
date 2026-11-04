@@ -296,6 +296,10 @@ def main():
         check(A, "branch profit 17600", float(sale["branchProfit"]) == 17600, sale["branchProfit"])
     again = data(expect(A, "re-record same day replaces", kr.call("POST", "/branch-sales", {**sbody, "items": [{"chickenTypeId": broiler["id"], "weightKg": "210"}]}), 201))
     check(A, "same reference kept", again and sale and again["reference"] == sale["reference"] and again["id"] == sale["id"])
+    stock = data(expect(A, "Kandy stock", kr.call("GET", f"/branches/{kandy['id']}/stock"), 200))
+    held = {r["chickenTypeId"]: r["availableWeightKg"] for r in (stock or [])}
+    check(A, "Kandy holds 85 kg Broiler after 210 sold", held.get(broiler["id"]) == "85.000", held)
+    expect(A, "other branch stock -> 403", cr.call("GET", f"/branches/{kandy['id']}/stock"), 403)
     expect(A, "list own", kr.call("GET", "/branch-sales"), 200)
     lst = data(cr.call("GET", "/branch-sales"))
     check(A, "other branch sees none", lst and lst["totalElements"] == 0)
