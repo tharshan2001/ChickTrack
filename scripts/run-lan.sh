@@ -25,7 +25,16 @@ fi
 export OAUTH_ISSUER="http://$IP:8080"
 export OAUTH_MOBILE_REDIRECT_URI="chicktrack://oauth2/callback,exp://$IP:8081/--/oauth2/callback"
 
-docker compose up -d postgres
+# Use a Postgres that is already running on the port (Homebrew, Postgres.app); otherwise start the Docker one.
+PG_PORT="${POSTGRES_PORT:-5432}"
+if lsof -nP -iTCP:"$PG_PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "Postgres is already listening on port $PG_PORT; not starting Docker."
+elif docker info >/dev/null 2>&1; then
+  docker compose up -d postgres
+else
+  echo "Nothing is listening on port $PG_PORT and Docker isn't running. Start Docker Desktop or a local Postgres." >&2
+  exit 1
+fi
 
 cat <<INFO
 
