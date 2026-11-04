@@ -151,6 +151,28 @@ public class SettlementService {
 		return new BalanceResponse(transferValue.subtract(settled).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 	}
 
+	/** Unpaid branch sales, oldest first, so a payment can be allocated to them in order. */
+	@Transactional(readOnly = true)
+	public java.util.List<com.chick.app.payment.dto.OpenSaleResponse> openSales(UUID branchId) {
+		branchAccess.require(branchId);
+		branches.findById(branchId)
+				.orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
+		Map<UUID, BigDecimal> paid = new java.util.HashMap<>();
+		for (Object[] row : settlements.allocatedBySale(branchId, BranchSettlement.Status.POSTED)) {
+			paid.put((UUID) row[0], (BigDecimal) row[1]);
+		}
+		return branchSales.findByBranchIdOrderBySaleDateAsc(branchId).stream()
+				.map(sale -> new com.chick.app.payment.dto.OpenSaleResponse(
+						sale.getId(),
+						sale.getReference(),
+						sale.getSaleDate(),
+						sale.getTransferValue(),
+						sale.getTransferValue().subtract(paid.getOrDefault(sale.getId(), BigDecimal.ZERO))
+								.max(BigDecimal.ZERO).setScale(MONEY_SCALE, RoundingMode.HALF_UP)))
+				.filter(open -> open.outstandingAmount().signum() > 0)
+				.toList();
+	}
+
 	/** Amount of posted settlements allocated to a branch sale. */
 	@Transactional(readOnly = true)
 	public BigDecimal settledAmount(UUID branchSaleId) {

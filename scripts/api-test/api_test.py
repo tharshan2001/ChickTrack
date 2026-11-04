@@ -331,6 +331,9 @@ def main():
     check(A, "balance restored after reversal", bal and float(bal["outstandingAmount"]) == 191520, bal)
     expect(A, "settle again 50000", acc.call("POST", "/branch-settlements", {**stbody, "amount": "50000.00", "reference": "TX3",
            "allocations": [{"branchSaleId": sale["id"], "amount": "50000.00"}]}), 201)
+    opens = data(expect(A, "open sales", acc.call("GET", f"/branches/{kandy['id']}/open-sales"), 200))
+    check(A, "open sale left to pay 141520", opens and len(opens) == 1 and opens[0]["branchSaleId"] == sale["id"] and opens[0]["outstandingAmount"] == "141520.00", opens)
+    expect(A, "other branch open sales -> 403", cr.call("GET", f"/branches/{kandy['id']}/open-sales"), 403)
 
     # ---------------------------------------------------------------- reports
     A = "Reports"

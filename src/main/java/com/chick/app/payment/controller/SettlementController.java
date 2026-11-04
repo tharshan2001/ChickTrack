@@ -65,4 +65,10 @@ public class SettlementController {
 	public ResponseEntity<ApiResponse<BalanceResponse>> branchBalance(@PathVariable UUID id) {
 		return ResponseEntity.ok(ApiResponse.of(service.branchBalance(id)));
 	}
+
+	@GetMapping("/branches/{id}/open-sales")
+	@PreAuthorize("isAuthenticated()")
+	public ResponseEntity<ApiResponse<java.util.List<com.chick.app.payment.dto.OpenSaleResponse>>> openSales(@PathVariable UUID id) {
+		return ResponseEntity.ok(ApiResponse.of(service.openSales(id)));
+	}
 }

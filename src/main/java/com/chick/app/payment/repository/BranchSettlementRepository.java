@@ -22,4 +22,14 @@ public interface BranchSettlementRepository extends JpaRepository<BranchSettleme
 	java.math.BigDecimal allocatedForBranch(
 			@org.springframework.data.repository.query.Param("branchId") UUID branchId,
 			@org.springframework.data.repository.query.Param("status") BranchSettlement.Status status);
+
+	/** Posted allocations per sale for a branch: rows of (sale id, amount). */
+	@org.springframework.data.jpa.repository.Query("""
+			select a.branchSale.id, coalesce(sum(a.amount), 0) from BranchSettlementAllocation a
+			where a.branchSettlement.branch.id = :branchId and a.branchSettlement.status = :status
+			group by a.branchSale.id
+			""")
+	java.util.List<Object[]> allocatedBySale(
+			@org.springframework.data.repository.query.Param("branchId") UUID branchId,
+			@org.springframework.data.repository.query.Param("status") BranchSettlement.Status status);
 }

@@ -27,4 +27,6 @@ public interface BranchSaleRepository
 	@org.springframework.data.jpa.repository.Query(
 			"select coalesce(sum(s.transferValue), 0) from BranchSale s where s.branch.id = :branchId")
 	java.math.BigDecimal totalTransferValue(@org.springframework.data.repository.query.Param("branchId") java.util.UUID branchId);
+
+	java.util.List<BranchSale> findByBranchIdOrderBySaleDateAsc(java.util.UUID branchId);
 }
