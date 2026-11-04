@@ -1,5 +1,6 @@
 package com.chick.app.chicken.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.chicken.domain.ChickenType;
 import com.chick.app.chicken.dto.ChickenTypeCreateRequest;
 import com.chick.app.chicken.dto.ChickenTypeResponse;
@@ -47,11 +48,13 @@ public class ChickenTypeService {
 	}
 
 	@Transactional
+	@Audited(action = "CHICKEN_TYPE_CREATE", entityType = "ChickenType")
 	public ChickenTypeResponse create(ChickenTypeCreateRequest request) {
 		return mapper.toResponse(chickenTypes.save(mapper.toEntity(request)));
 	}
 
 	@Transactional
+	@Audited(action = "CHICKEN_TYPE_UPDATE", entityType = "ChickenType")
 	public ChickenTypeResponse update(UUID id, ChickenTypeUpdateRequest request) {
 		ChickenType chickenType = chickenTypes.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("ChickenType", id));
@@ -60,6 +63,7 @@ public class ChickenTypeService {
 	}
 
 	@Transactional
+	@Audited(action = "CHICKEN_TYPE_STATUS", entityType = "ChickenType")
 	public ChickenTypeResponse setStatus(UUID id, ChickenTypeStatusRequest request) {
 		ChickenType chickenType = chickenTypes.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("ChickenType", id));

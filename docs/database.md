@@ -10,18 +10,18 @@ Flyway owns all schema changes. Migrations are immutable once applied.
 | `V2__identity.sql` | Branches, users, roles, and join tables |
 | `V3__foundation.sql` | Audit logs, document sequences, idempotency records |
 
-Current and planned migrations:
-
-| Migration | Purpose |
-|---|---|
 | `V4__suppliers.sql` | Suppliers |
 | `V5__reference_data.sql` | Chicken types and expense categories |
 | `V6__pricing.sql` | Daily prices (chicken type, optional branch, optional supplier) |
 | `V7__procurement.sql` | Procurement, items, receipts, expenses |
 | `V8__inventory.sql` | Stock batches |
-| `V9__distribution.sql` | Distributions, items, allocations, branch receipts |
-| `V10__finance.sql` | Payments and settlements |
-| `V11__indexes.sql` | Additional reporting indexes |
+| `V9__inventory_movements.sql` | Inventory movement ledger |
+| `V10__distribution.sql` | Distributions, items, expense allocations, branch receipts |
+| `V11__finance.sql` | Branch settlements and allocations |
+| `V12__branch_sales.sql` | Daily branch sales |
+| `V13__settlements_on_branch_sales.sql` | Settlements allocate against branch sales |
+| `V14__price_ladder.sql` | Company margin rules, transfer pricing, branch sale lines |
+| `V15__integrity_constraints.sql` | Status and non-negative `CHECK` constraints, allocation target check, margin rule uniqueness, reporting indexes |
 
 ## Current Tables
 

@@ -1,5 +1,6 @@
 package com.chick.app.procurement.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.chicken.domain.ChickenType;
 import com.chick.app.chicken.repository.ChickenTypeRepository;
 import com.chick.app.common.service.DocumentNumberService;
@@ -112,6 +113,7 @@ public class ProcurementService {
 	}
 
 	@Transactional
+	@Audited(action = "PROCUREMENT_CREATE", entityType = "Procurement")
 	public ProcurementResponse create(ProcurementCreateRequest request) {
 		Supplier supplier = suppliers.findById(request.supplierId())
 				.orElseThrow(() -> new ResourceNotFoundException("Supplier", request.supplierId()));

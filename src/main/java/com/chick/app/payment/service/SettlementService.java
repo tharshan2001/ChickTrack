@@ -1,5 +1,6 @@
 package com.chick.app.payment.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.repository.BranchRepository;
 import com.chick.app.common.exception.BusinessException;
@@ -72,6 +73,7 @@ public class SettlementService {
 	}
 
 	@Transactional
+	@Audited(action = "SETTLEMENT_CREATE", entityType = "BranchSettlement")
 	public BranchSettlementResponse create(BranchSettlementCreateRequest request) {
 		branchAccess.require(request.branchId());
 		Branch branch = branches.lockById(request.branchId())
@@ -126,6 +128,7 @@ public class SettlementService {
 	}
 
 	@Transactional
+	@Audited(action = "SETTLEMENT_REVERSE", entityType = "BranchSettlement")
 	public BranchSettlementResponse reverse(UUID id, SettlementReverseRequest request) {
 		BranchSettlement settlement = find(id);
 		branchAccess.require(settlement.getBranch().getId());

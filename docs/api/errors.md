@@ -25,11 +25,13 @@
 | `UNAUTHORIZED` | 401 | Missing, invalid, or expired token |
 | `FORBIDDEN` | 403 | Role or branch access denied |
 | `RESOURCE_NOT_FOUND` | 404 | Requested resource does not exist |
-| `CONFLICT` | 409 | Duplicate value, stale version, or conflicting state |
+| `CONCURRENT_MODIFICATION` | 409 | The record changed in another request; reload and retry |
+| `DATA_CONFLICT` | 409 | Duplicate value or conflicting reference |
 | `INVALID_STATUS_TRANSITION` | 409 | Document cannot move to the requested status |
 | `INSUFFICIENT_STOCK` | 409 | Available stock is below the requested weight |
 | `OVER_ALLOCATION` | 409 | Payment or settlement exceeds the outstanding balance |
-| `IDEMPOTENCY_CONFLICT` | 409 | Idempotency key reused with a different payload |
+| `REQUEST_IN_PROGRESS` | 409 | A request with the same idempotency key is still running |
+| `IDEMPOTENCY_KEY_REUSED` | 422 | Idempotency key reused with a different payload |
 | `REPORT_GENERATION_FAILED` | 500 | Export generation failed |
 | `INTERNAL_ERROR` | 500 | Unexpected server error |
 
@@ -37,11 +39,11 @@
 
 A request with an existing idempotency key and an identical payload returns the original response.
 
-A request with an existing key and a different payload returns:
+A request with an existing key and a different payload returns `422`:
 
 ```json
 {
-  "code": "IDEMPOTENCY_CONFLICT",
+  "code": "IDEMPOTENCY_KEY_REUSED",
   "message": "Idempotency key was already used with a different request",
   "fieldErrors": null,
   "requestId": "client-correlation-id",

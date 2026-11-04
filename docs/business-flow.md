@@ -223,8 +223,6 @@ The branch does not report quantities or chicken types and no FIFO costing happe
 
 ## 7. Not Yet Implemented
 
-- Audit log writes (`audit_logs` table exists, nothing writes to it yet).
-- Idempotency key handling (`sync_requests` table exists, no filter or interceptor).
 - Inventory read and adjustment APIs (`stock-batches`, `inventory-movements`, `stock-adjustments`).
 - User and role administration API (branch users cannot be created yet).
 - Push notifications, photo attachments, Excel exports.

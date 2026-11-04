@@ -1,5 +1,6 @@
 package com.chick.app.margin.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.repository.BranchRepository;
 import com.chick.app.chicken.domain.ChickenType;
@@ -44,6 +45,7 @@ public class CompanyMarginRuleService {
 	}
 
 	@Transactional
+	@Audited(action = "MARGIN_RULE_CREATE", entityType = "CompanyMarginRule")
 	public CompanyMarginRuleResponse create(CompanyMarginRuleCreateRequest request) {
 		ChickenType chickenType = chickenTypes.findById(request.chickenTypeId())
 				.orElseThrow(() -> new ResourceNotFoundException("ChickenType", request.chickenTypeId()));

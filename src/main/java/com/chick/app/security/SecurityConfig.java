@@ -5,11 +5,6 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.interfaces.RSAPrivateKey;
-import java.security.interfaces.RSAPublicKey;
-import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -70,14 +65,18 @@ public class SecurityConfig {
 
 	@Bean
 	@Order(2)
-	SecurityFilterChain resourceServerSecurityFilterChain(HttpSecurity http) throws Exception {
+	SecurityFilterChain resourceServerSecurityFilterChain(
+			HttpSecurity http,
+			com.chick.app.sync.SyncRequestRepository syncRequests) throws Exception {
 		http
 				.securityMatcher("/api/**")
 				.authorizeHttpRequests((authorize) -> authorize
 						.requestMatchers("/api/public/**").permitAll()
 						.anyRequest().authenticated())
 				.oauth2ResourceServer((oauth2) -> oauth2.jwt(jwt ->
-						jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+						jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+				.addFilterAfter(new com.chick.app.sync.IdempotencyFilter(syncRequests),
+						org.springframework.security.web.access.intercept.AuthorizationFilter.class);
 		return http.build();
 	}
 
@@ -124,14 +123,14 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	JWKSource<SecurityContext> jwkSource() {
-		KeyPair keyPair = generateRsaKey();
-		RSAPublicKey publicKey = (RSAPublicKey) keyPair.getPublic();
-		RSAPrivateKey privateKey = (RSAPrivateKey) keyPair.getPrivate();
-		RSAKey rsaKey = new RSAKey.Builder(publicKey)
-				.privateKey(privateKey)
-				.keyID(UUID.randomUUID().toString())
-				.build();
+	JWKSource<SecurityContext> jwkSource(
+			@Value("${app.oauth.jwk.private-key:}") String privateKeyLocation,
+			@Value("${app.oauth.jwk.key-id:}") String keyId,
+			@Value("${app.oauth.jwk.allow-generated:true}") boolean allowGenerated) {
+		org.springframework.core.io.Resource privateKey = privateKeyLocation.isBlank()
+				? null
+				: new org.springframework.core.io.DefaultResourceLoader().getResource(privateKeyLocation);
+		RSAKey rsaKey = SigningKeyLoader.load(privateKey, keyId, allowGenerated);
 		return new ImmutableJWKSet<>(new JWKSet(rsaKey));
 	}
 
@@ -176,16 +175,5 @@ public class SecurityConfig {
 	AuthorizationServerSettings authorizationServerSettings(
 			@Value("${app.oauth.issuer:http://localhost:8080}") String issuer) {
 		return AuthorizationServerSettings.builder().issuer(issuer).build();
-	}
-
-	private static KeyPair generateRsaKey() {
-		try {
-			KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance("RSA");
-			keyPairGenerator.initialize(2048);
-			return keyPairGenerator.generateKeyPair();
-		}
-		catch (Exception ex) {
-			throw new IllegalStateException("Unable to generate RSA key", ex);
-		}
 	}
 }

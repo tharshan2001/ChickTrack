@@ -1,5 +1,6 @@
 package com.chick.app.sales.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.repository.BranchRepository;
 import com.chick.app.chicken.domain.ChickenType;
@@ -74,6 +75,7 @@ public class BranchSaleService {
 	}
 
 	@Transactional
+	@Audited(action = "BRANCH_SALE_RECORD", entityType = "BranchSale")
 	public BranchSaleResponse record(BranchSaleCreateRequest request) {
 		branchAccess.require(request.branchId());
 		Branch branch = branches.lockById(request.branchId())

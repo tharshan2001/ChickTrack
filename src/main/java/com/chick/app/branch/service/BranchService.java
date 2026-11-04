@@ -1,5 +1,6 @@
 package com.chick.app.branch.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.dto.BranchCreateRequest;
 import com.chick.app.branch.dto.BranchResponse;
@@ -65,6 +66,7 @@ public class BranchService {
 	}
 
 	@Transactional
+	@Audited(action = "BRANCH_CREATE", entityType = "Branch")
 	public BranchResponse create(BranchCreateRequest request) {
 		if (branches.existsByCode(request.code())) {
 			throw new BusinessException("CONFLICT", "Branch code already exists: " + request.code(), HttpStatus.CONFLICT);
@@ -74,6 +76,7 @@ public class BranchService {
 	}
 
 	@Transactional
+	@Audited(action = "BRANCH_UPDATE", entityType = "Branch")
 	public BranchResponse update(UUID id, BranchUpdateRequest request) {
 		Branch branch = branches.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", id));
@@ -82,6 +85,7 @@ public class BranchService {
 	}
 
 	@Transactional
+	@Audited(action = "BRANCH_STATUS", entityType = "Branch")
 	public BranchResponse setStatus(UUID id, BranchStatusRequest request) {
 		Branch branch = branches.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", id));

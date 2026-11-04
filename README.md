@@ -116,6 +116,9 @@ Configuration is read from environment variables with local defaults.
 | `OAUTH_MOBILE_REDIRECT_URI` | `chicktrack://oauth2/callback` | Mobile redirect URI |
 | `AWS_S3_BUCKET` | `chicktrack-dev` | Attachment bucket |
 | `SENTRY_DSN` | empty | Sentry DSN |
+| `OAUTH_JWK_PRIVATE_KEY` | empty | JWT signing key, PKCS#8 PEM location (e.g. `file:/run/secrets/jwk.pem`) |
+| `OAUTH_JWK_KEY_ID` | derived | Key id published in the JWK set |
+| `OAUTH_JWK_ALLOW_GENERATED` | `true` | Allow a throwaway key when none is configured; set `false` in production |
 
 Never commit `.env` or production secrets.
 
@@ -188,7 +191,7 @@ Compile only:
 ## Security Notes
 
 - Change the bootstrap admin password before any shared deployment.
-- Replace the generated development JWK with a persistent signing key before production.
+- Configure a persistent signing key (`OAUTH_JWK_PRIVATE_KEY`) and set `OAUTH_JWK_ALLOW_GENERATED=false` before production. Generate one with `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out jwk.pem`.
 - Use HTTPS in production.
 - Keep OAuth and storage credentials out of Git.
 - Restrict actuator endpoints in production.

@@ -1,5 +1,6 @@
 package com.chick.app.distribution.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.repository.BranchRepository;
 import com.chick.app.chicken.domain.ChickenType;
@@ -134,6 +135,7 @@ public class DistributionService {
 	}
 
 	@Transactional
+	@Audited(action = "DISTRIBUTION_CREATE", entityType = "Distribution")
 	public DistributionResponse create(DistributionCreateRequest request) {
 		branchAccess.require(request.branchId());
 		Branch branch = branches.findById(request.branchId())
@@ -234,6 +236,7 @@ public class DistributionService {
 	}
 
 	@Transactional
+	@Audited(action = "DISTRIBUTION_DISPATCH", entityType = "Distribution")
 	public DistributionResponse dispatch(UUID id) {
 		Distribution distribution = findAccessible(id);
 		if (distribution.getStatus() != DistributionStatus.DRAFT) {
@@ -281,6 +284,7 @@ public class DistributionService {
 	}
 
 	@Transactional
+	@Audited(action = "DISTRIBUTION_RECEIVE", entityType = "Distribution")
 	public BranchReceiptResponse receive(UUID id, BranchReceiptRequest request) {
 		Distribution distribution = findAccessible(id);
 		branches.lockById(distribution.getBranch().getId());
@@ -356,6 +360,7 @@ public class DistributionService {
 	}
 
 	@Transactional
+	@Audited(action = "DISTRIBUTION_REVERSE", entityType = "Distribution")
 	public DistributionResponse reverse(UUID id, DistributionReverseRequest request) {
 		Distribution distribution = findAccessible(id);
 		branches.lockById(distribution.getBranch().getId());

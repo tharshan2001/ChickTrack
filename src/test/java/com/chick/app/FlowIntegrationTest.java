@@ -63,6 +63,7 @@ class FlowIntegrationTest {
 	@Autowired SettlementService settlements; @Autowired StockBatchRepository batches;
 	@Autowired DocumentNumberService numbers; @Autowired UserAccountRepository users; @Autowired RoleRepository roles;
 	@Autowired TransactionTemplate tx;
+	@Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
 	static void as(String user) {
 		SecurityContextHolder.getContext().setAuthentication(
@@ -128,6 +129,12 @@ class FlowIntegrationTest {
 
 		settlements.create(new BranchSettlementCreateRequest(branch, LocalDate.of(2026, 11, 4), new BigDecimal("1000.00"),
 				"CASH", null, null, List.of(new BranchSettlementAllocationRequest(sale.id(), new BigDecimal("1000.00")))));
+
+		// Each document action leaves an audit record naming the actor.
+		Integer audited = jdbc.queryForObject(
+				"select count(*) from audit_logs where actor_username = 'admin' and entity_id = ? and action in ('DISTRIBUTION_CREATE','DISTRIBUTION_DISPATCH','DISTRIBUTION_RECEIVE')",
+				Integer.class, dispatched.id().toString());
+		assertThat(audited).isEqualTo(3);
 
 		// A branch receiver with no branches sees nothing; with one branch sees only it.
 		UserAccount receiver = new UserAccount();

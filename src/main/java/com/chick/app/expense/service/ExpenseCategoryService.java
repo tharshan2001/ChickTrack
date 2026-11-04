@@ -1,5 +1,6 @@
 package com.chick.app.expense.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.expense.domain.ExpenseCategory;
 import com.chick.app.expense.dto.ExpenseCategoryCreateRequest;
 import com.chick.app.expense.dto.ExpenseCategoryResponse;
@@ -47,11 +48,13 @@ public class ExpenseCategoryService {
 	}
 
 	@Transactional
+	@Audited(action = "EXPENSE_CATEGORY_CREATE", entityType = "ExpenseCategory")
 	public ExpenseCategoryResponse create(ExpenseCategoryCreateRequest request) {
 		return mapper.toResponse(expenseCategories.save(mapper.toEntity(request)));
 	}
 
 	@Transactional
+	@Audited(action = "EXPENSE_CATEGORY_UPDATE", entityType = "ExpenseCategory")
 	public ExpenseCategoryResponse update(UUID id, ExpenseCategoryUpdateRequest request) {
 		ExpenseCategory expenseCategory = expenseCategories.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("ExpenseCategory", id));
@@ -60,6 +63,7 @@ public class ExpenseCategoryService {
 	}
 
 	@Transactional
+	@Audited(action = "EXPENSE_CATEGORY_STATUS", entityType = "ExpenseCategory")
 	public ExpenseCategoryResponse setStatus(UUID id, ExpenseCategoryStatusRequest request) {
 		ExpenseCategory expenseCategory = expenseCategories.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("ExpenseCategory", id));

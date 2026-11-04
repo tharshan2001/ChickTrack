@@ -1,5 +1,6 @@
 package com.chick.app.supplier.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.exception.ResourceNotFoundException;
 import com.chick.app.supplier.domain.Supplier;
@@ -51,12 +52,14 @@ public class SupplierService {
 	}
 
 	@Transactional
+	@Audited(action = "SUPPLIER_CREATE", entityType = "Supplier")
 	public SupplierResponse create(SupplierCreateRequest request) {
 		Supplier supplier = mapper.toEntity(request);
 		return mapper.toResponse(suppliers.save(supplier));
 	}
 
 	@Transactional
+	@Audited(action = "SUPPLIER_UPDATE", entityType = "Supplier")
 	public SupplierResponse update(UUID id, SupplierUpdateRequest request) {
 		Supplier supplier = suppliers.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Supplier", id));
@@ -65,6 +68,7 @@ public class SupplierService {
 	}
 
 	@Transactional
+	@Audited(action = "SUPPLIER_STATUS", entityType = "Supplier")
 	public SupplierResponse setStatus(UUID id, SupplierStatusRequest request) {
 		Supplier supplier = suppliers.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Supplier", id));

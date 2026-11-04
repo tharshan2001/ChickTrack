@@ -2,7 +2,10 @@
 
 ## Status
 
-Foundation tables exist. Feature integration is planned.
+Implemented.
+
+- Audit: service methods marked `@Audited` write one `audit_logs` row on success (actor, action, entity, resulting state as JSON, reason when given). Covered: master data create/update/status, daily prices, margin rules, procurement, distribution create/dispatch/receive/reverse, branch sales, settlements and their reversal. Old values are not captured yet.
+- Idempotency: `IdempotencyFilter` handles `Idempotency-Key` on `POST`, `PUT`, `PATCH` and `DELETE` under `/api/**`. Keys are scoped to the user. Responses below 500 (except 409 and 429) are stored and replayed with header `Idempotent-Replayed: true`.
 
 ## Audit
 

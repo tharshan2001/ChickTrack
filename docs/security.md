@@ -112,7 +112,7 @@ Business and validation errors return:
 
 ## Production Notes
 
-- Replace the generated development JWK with a persistent signing key before production.
+- Configure a persistent signing key (`OAUTH_JWK_PRIVATE_KEY`, PKCS#8 PEM) and set `OAUTH_JWK_ALLOW_GENERATED=false` in production. Without a key the server generates one at startup and every token becomes invalid on restart.
 - Use HTTPS only.
 - Keep OAuth secrets out of Git.
 - Restrict actuator endpoints in production.

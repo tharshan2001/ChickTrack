@@ -1,5 +1,6 @@
 package com.chick.app.pricing.service;
 
+import com.chick.app.audit.Audited;
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.repository.BranchRepository;
 import com.chick.app.chicken.domain.ChickenType;
@@ -85,6 +86,7 @@ public class DailyPriceService {
 	}
 
 	@Transactional
+	@Audited(action = "DAILY_PRICE_CREATE", entityType = "DailyPrice")
 	public DailyPriceResponse create(DailyPriceCreateRequest request) {
 		ChickenType chickenType = chickenTypes.findById(request.chickenTypeId())
 				.orElseThrow(() -> new ResourceNotFoundException("ChickenType", request.chickenTypeId()));
