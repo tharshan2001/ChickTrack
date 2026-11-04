@@ -81,6 +81,16 @@ To use it from a phone on the same Wi-Fi (the mobile app in Expo Go or a develop
 allows the Expo Go sign-in redirect. `OAUTH_MOBILE_REDIRECT_URI` takes a comma-separated list, and the
 saved OAuth client is updated to match on every start.
 
+### Demo data
+
+With the API running on an empty database, fill it with about three months of realistic activity
+(purchases, stock, dispatches, branch sales and payments, all created through the API):
+
+```bash
+python3 scripts/seed/seed_demo.py
+# options: CT_BASE (default http://localhost:8090), CT_ADMIN_USERNAME, CT_ADMIN_PASSWORD, CT_DAYS (default 92)
+```
+
 Flyway creates the schema on startup. On first run, a bootstrap admin is created from `OAUTH_ADMIN_USERNAME` and `OAUTH_ADMIN_PASSWORD`.
 
 ### 4. Open the API surface
