@@ -2,7 +2,7 @@
 
 ## Status
 
-Planned.
+Implemented. Adjustments need a reason; an approval step is not implemented.
 
 ## Purpose
 
@@ -20,7 +20,7 @@ Track received stock by batch, cost, weight, and movement history.
 - `inventory_movements` is the source of truth; warehouse stock reconciles as `RECEIPT - DISTRIBUTION = remaining weight`.
 - `stock_batches.remaining_weight` is updated transactionally.
 - Remaining weight cannot be negative.
-- Adjustments require a reason and approval.
+- Adjustments require a reason. Warehouse adjustments change remaining weight; branch-side receiving losses do not.
 - Damage, loss, and returns are recorded as movements.
 - FIFO allocation locks batches before allocating weight.
 - The final issue consumes the batch's remaining cost to zero.
@@ -37,7 +37,7 @@ Track received stock by batch, cost, weight, and movement history.
 
 ## Data
 
-Planned tables:
+Tables:
 
 - `stock_batches`
 - `inventory_movements`
@@ -54,11 +54,10 @@ Planned tables:
 
 ## API
 
-Planned:
-
 - `GET /api/v1/stock-batches`
 - `GET /api/v1/stock-batches/{id}`
 - `GET /api/v1/inventory-movements`
+- `GET /api/v1/stock-adjustments`
 - `POST /api/v1/stock-adjustments`
 
 See [Inventory API](../api/inventory.md).

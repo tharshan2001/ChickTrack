@@ -22,6 +22,7 @@ Flyway owns all schema changes. Migrations are immutable once applied.
 | `V13__settlements_on_branch_sales.sql` | Settlements allocate against branch sales |
 | `V14__price_ladder.sql` | Company margin rules, transfer pricing, branch sale lines |
 | `V15__integrity_constraints.sql` | Status and non-negative `CHECK` constraints, allocation target check, margin rule uniqueness, reporting indexes |
+| `V16__stock_adjustments.sql` | Warehouse stock adjustments |
 
 ## Current Tables
 
