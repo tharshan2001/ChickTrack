@@ -67,7 +67,7 @@ purchase price (typed at purchase)          P
 - The user authenticates with the web login form; the authorization server issues an access token and a refresh token.
 - The access token carries `roles` as a claim and is mapped to `ROLE_*` authorities on every API call.
 - Every `/api/**` endpoint requires a valid bearer token. Bootstrap admin is created on first start (`app.oauth.admin.username` / `app.oauth.admin.password`).
-- All document writes are protected by role checks in the controller plus branch scoping in the service layer.
+- Document writes are protected by role checks in the controllers (`@PreAuthorize`). Branch scoping is enforced inside the dashboard and report queries (`ReportScopeService`); scoping on the write and read endpoints of sales, settlements and balances is pending (see §7).
 
 ### 3.2 Master Data
 

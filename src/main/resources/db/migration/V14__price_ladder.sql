@@ -16,12 +16,24 @@ ALTER TABLE distribution_items ADD COLUMN our_margin_per_kg numeric(14,4) NOT NU
 ALTER TABLE distribution_items ADD COLUMN distribution_expense_per_kg numeric(14,4) NOT NULL DEFAULT 0;
 ALTER TABLE distribution_items ADD COLUMN transfer_price_per_kg numeric(14,4) NOT NULL DEFAULT 0;
 ALTER TABLE distribution_items ADD COLUMN line_transfer_value numeric(16,2) NOT NULL DEFAULT 0;
+
+UPDATE distribution_items
+SET line_transfer_value = line_cost + line_margin,
+    our_margin_per_kg = CASE WHEN weight_kg > 0 THEN line_margin / weight_kg ELSE 0 END,
+    transfer_price_per_kg = CASE WHEN weight_kg > 0 THEN (line_cost + line_margin) / weight_kg ELSE 0 END,
+    distribution_expense_per_kg = 0;
+
 ALTER TABLE distribution_items DROP COLUMN unit_price;
 ALTER TABLE distribution_items DROP COLUMN line_revenue;
 ALTER TABLE distribution_items DROP COLUMN line_margin;
 
 ALTER TABLE distributions ADD COLUMN total_transfer_value numeric(16,2) NOT NULL DEFAULT 0;
 ALTER TABLE distributions ADD COLUMN total_our_margin numeric(16,2) NOT NULL DEFAULT 0;
+
+UPDATE distributions
+SET total_transfer_value = total_cost + total_margin,
+    total_our_margin = total_margin;
+
 ALTER TABLE distributions DROP COLUMN total_revenue;
 ALTER TABLE distributions DROP COLUMN total_margin;
 
@@ -45,5 +57,10 @@ CREATE INDEX branch_sale_items_chicken_type_idx ON branch_sale_items (chicken_ty
 
 ALTER TABLE branch_sales ADD COLUMN transfer_value numeric(16,2) NOT NULL DEFAULT 0;
 ALTER TABLE branch_sales ADD COLUMN branch_profit numeric(16,2) NOT NULL DEFAULT 0;
+
+UPDATE branch_sales
+SET transfer_value = cost_amount,
+    branch_profit = profit;
+
 ALTER TABLE branch_sales DROP COLUMN cost_amount;
 ALTER TABLE branch_sales DROP COLUMN profit;

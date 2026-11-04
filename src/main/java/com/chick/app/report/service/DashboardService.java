@@ -106,7 +106,9 @@ public class DashboardService {
 			ourMargin = ourMargin.add(distribution.getTotalOurMargin());
 		}
 
-		Specification<BranchSale> allSalesSpec = (root, query, cb) -> cb.conjunction();
+		Specification<BranchSale> allSalesSpec = (root, query, cb) -> cb.and(
+				cb.greaterThanOrEqualTo(root.get("saleDate"), effectiveFrom),
+				cb.lessThanOrEqualTo(root.get("saleDate"), effectiveTo));
 		if (branchId != null) {
 			allSalesSpec = allSalesSpec.and((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
 		}
@@ -117,7 +119,10 @@ public class DashboardService {
 		}
 
 		Specification<BranchSettlement> settlementSpec =
-				(root, query, cb) -> cb.and(cb.equal(root.get("status"), BranchSettlement.Status.POSTED));
+				(root, query, cb) -> cb.and(
+						cb.equal(root.get("status"), BranchSettlement.Status.POSTED),
+						cb.greaterThanOrEqualTo(root.get("settlementDate"), effectiveFrom),
+						cb.lessThanOrEqualTo(root.get("settlementDate"), effectiveTo));
 		for (BranchSettlement settlement : settlements.findAll(settlementSpec)) {
 			if (!scope.allows(settlement.getBranch().getId())) {
 				continue;

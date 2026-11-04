@@ -40,7 +40,9 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -128,14 +130,17 @@ public class DistributionService {
 		distribution.setStatus(DistributionStatus.DRAFT);
 		distribution.setReference(documentNumbers.next("DISTRIBUTION", "DST"));
 
-		// Validate and allocate stock first; do not mutate stock until all items are valid.
+		// Validate and allocate stock first; stock is only decremented on dispatch so drafts never consume stock.
+		Map<UUID, BigDecimal> availableByBatch = new HashMap<>();
 		List<AllocatedItem> allocations = new ArrayList<>();
 		for (DistributionItemRequest itemRequest : request.items()) {
 			ChickenType chickenType = chickenTypes.findById(itemRequest.chickenTypeId())
 					.orElseThrow(() -> new ResourceNotFoundException("ChickenType", itemRequest.chickenTypeId()));
 			List<StockBatch> batches = stockBatches.findAvailableByChickenType(chickenType);
 			BigDecimal remainingToAllocate = itemRequest.weightKg().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
-			BigDecimal available = batches.stream().map(StockBatch::getRemainingWeightKg).reduce(BigDecimal.ZERO, BigDecimal::add);
+			BigDecimal available = batches.stream()
+					.map(batch -> availableByBatch.computeIfAbsent(batch.getId(), id -> batch.getRemainingWeightKg()))
+					.reduce(BigDecimal.ZERO, BigDecimal::add);
 			if (available.compareTo(remainingToAllocate) < 0) {
 				throw new BusinessException("INSUFFICIENT_STOCK",
 						"Insufficient stock for chicken type " + chickenType.getId(), HttpStatus.CONFLICT);
@@ -146,11 +151,14 @@ public class DistributionService {
 				if (remainingToAllocate.compareTo(BigDecimal.ZERO) <= 0) {
 					break;
 				}
-				BigDecimal allocate = batch.getRemainingWeightKg().min(remainingToAllocate);
+				BigDecimal batchAvailable = availableByBatch.computeIfAbsent(
+						batch.getId(), id -> batch.getRemainingWeightKg());
+				BigDecimal allocate = batchAvailable.min(remainingToAllocate);
 				if (allocate.compareTo(BigDecimal.ZERO) <= 0) {
 					continue;
 				}
 				allocations.add(new AllocatedItem(itemRequest, chickenType, batch, allocate));
+				availableByBatch.put(batch.getId(), batchAvailable.subtract(allocate));
 				remainingToAllocate = remainingToAllocate.subtract(allocate);
 				allocatedWeight = allocatedWeight.add(allocate);
 			}
@@ -160,12 +168,9 @@ public class DistributionService {
 			}
 		}
 
-		// Mutate stock and create distribution items.
+		// Create distribution items; batches are decremented when the distribution is dispatched.
 		for (AllocatedItem allocation : allocations) {
 			StockBatch batch = allocation.batch;
-			batch.setRemainingWeightKg(batch.getRemainingWeightKg().subtract(allocation.weight));
-			stockBatches.save(batch);
-
 			DistributionItem item = new DistributionItem();
 			item.setDistribution(distribution);
 			item.setStockBatch(batch);
@@ -221,6 +226,29 @@ public class DistributionService {
 			throw new BusinessException("INVALID_STATUS_TRANSITION",
 					"Only draft distributions can be dispatched", HttpStatus.CONFLICT);
 		}
+
+		// Validate the whole distribution before mutating any batch, so a partial dispatch cannot occur.
+		Map<UUID, StockBatch> batchesById = new LinkedHashMap<>();
+		Map<UUID, BigDecimal> weightByBatch = new LinkedHashMap<>();
+		for (DistributionItem item : distribution.getItems()) {
+			StockBatch batch = item.getStockBatch();
+			batchesById.putIfAbsent(batch.getId(), batch);
+			weightByBatch.merge(batch.getId(), item.getWeightKg(), BigDecimal::add);
+		}
+		for (var entry : weightByBatch.entrySet()) {
+			StockBatch batch = batchesById.get(entry.getKey());
+			BigDecimal required = entry.getValue().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
+			if (batch.getRemainingWeightKg().compareTo(required) < 0) {
+				throw new BusinessException("INSUFFICIENT_STOCK",
+						"Insufficient stock for chicken type " + batch.getChickenType().getId(), HttpStatus.CONFLICT);
+			}
+		}
+		for (var entry : weightByBatch.entrySet()) {
+			StockBatch batch = batchesById.get(entry.getKey());
+			batch.setRemainingWeightKg(batch.getRemainingWeightKg().subtract(entry.getValue()));
+			stockBatches.save(batch);
+		}
+
 		for (DistributionItem item : distribution.getItems()) {
 			InventoryMovement movement = new InventoryMovement();
 			movement.setStockBatch(item.getStockBatch());
@@ -296,12 +324,7 @@ public class DistributionService {
 	public DistributionResponse reverse(UUID id, DistributionReverseRequest request) {
 		Distribution distribution = find(id);
 		if (distribution.getStatus() == DistributionStatus.DRAFT) {
-			// Restore reserved stock.
-			for (DistributionItem item : distribution.getItems()) {
-				StockBatch batch = item.getStockBatch();
-				batch.setRemainingWeightKg(batch.getRemainingWeightKg().add(item.getWeightKg()));
-				stockBatches.save(batch);
-			}
+			// Drafts never decremented stock, so there is nothing to restore.
 			distribution.setStatus(DistributionStatus.REVERSED);
 			distribution.setReversalReason(request.reason());
 			return toResponse(distributions.save(distribution));

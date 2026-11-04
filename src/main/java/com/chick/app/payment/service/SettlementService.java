@@ -17,6 +17,8 @@ import com.chick.app.sales.repository.BranchSaleRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -65,34 +67,43 @@ public class SettlementService {
 		Branch branch = branches.findById(request.branchId())
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", request.branchId()));
 
+		Map<UUID, BigDecimal> requestedBySale = new LinkedHashMap<>();
 		BigDecimal allocationTotal = BigDecimal.ZERO;
 		for (var allocationRequest : request.allocations()) {
-			allocationTotal = allocationTotal.add(allocationRequest.amount());
+			BigDecimal amount = allocationRequest.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+			requestedBySale.merge(allocationRequest.branchSaleId(), amount, BigDecimal::add);
+			allocationTotal = allocationTotal.add(amount);
 		}
-		if (allocationTotal.compareTo(request.amount()) != 0) {
+		BigDecimal settlementAmount = request.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+		if (allocationTotal.compareTo(settlementAmount) != 0) {
 			throw new BusinessException("BUSINESS_RULE_VIOLATION",
 					"Settlement allocations must sum to the settlement amount", HttpStatus.BAD_REQUEST);
 		}
 
-		BranchSettlement settlement = mapper.toEntity(request);
-		settlement.setBranch(branch);
-		settlement.setAmount(request.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		settlement.setStatus(BranchSettlement.Status.POSTED);
-
-		for (var allocationRequest : request.allocations()) {
-			BranchSale sale = branchSales.findById(allocationRequest.branchSaleId())
-					.orElseThrow(() -> new ResourceNotFoundException("BranchSale", allocationRequest.branchSaleId()));
+		Map<UUID, BranchSale> requestedSales = new LinkedHashMap<>();
+		for (var entry : requestedBySale.entrySet()) {
+			BranchSale sale = branchSales.findById(entry.getKey())
+					.orElseThrow(() -> new ResourceNotFoundException("BranchSale", entry.getKey()));
 			if (!sale.getBranch().getId().equals(branch.getId())) {
 				throw new BusinessException("BUSINESS_RULE_VIOLATION",
 						"Branch sale does not belong to branch", HttpStatus.BAD_REQUEST);
 			}
-
 			BigDecimal outstanding = saleOutstanding(sale);
-			if (allocationRequest.amount().compareTo(outstanding) > 0) {
+			if (entry.getValue().compareTo(outstanding) > 0) {
 				throw new BusinessException("OVER_ALLOCATION",
 						"Settlement allocation exceeds the outstanding balance of the branch sale",
 						HttpStatus.CONFLICT);
 			}
+			requestedSales.put(sale.getId(), sale);
+		}
+
+		BranchSettlement settlement = mapper.toEntity(request);
+		settlement.setBranch(branch);
+		settlement.setAmount(settlementAmount);
+		settlement.setStatus(BranchSettlement.Status.POSTED);
+
+		for (var allocationRequest : request.allocations()) {
+			BranchSale sale = requestedSales.get(allocationRequest.branchSaleId());
 
 			BranchSettlementAllocation allocation = mapper.toAllocation(allocationRequest);
 			allocation.setBranchSettlement(settlement);
@@ -150,6 +161,6 @@ public class SettlementService {
 						&& allocation.getBranchSale().getId().equals(sale.getId()))
 				.map(BranchSettlementAllocation::getAmount)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
-		return sale.getTransferValue().subtract(settled);
+		return sale.getTransferValue().subtract(settled).max(BigDecimal.ZERO);
 	}
 }

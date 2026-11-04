@@ -101,4 +101,22 @@ class SettlementServiceTest {
 				.isInstanceOf(BusinessException.class)
 				.hasMessageContaining("outstanding");
 	}
+
+	@Test
+	void rejectsRepeatedAllocationsAgainstTheSameSaleThatTogetherExceedOutstanding() {
+		when(settlements.findAll(any(org.springframework.data.jpa.domain.Specification.class))).thenReturn(List.of());
+
+		assertThatThrownBy(() -> service.create(new BranchSettlementCreateRequest(
+				branch.getId(),
+				LocalDate.of(2026, 1, 20),
+				new BigDecimal("400000.00"),
+				"CASH",
+				"REF-2",
+				null,
+				List.of(
+						new BranchSettlementAllocationRequest(sale.getId(), new BigDecimal("200000.00")),
+						new BranchSettlementAllocationRequest(sale.getId(), new BigDecimal("200000.00"))))))
+				.isInstanceOf(BusinessException.class)
+				.hasMessageContaining("outstanding");
+	}
 }
