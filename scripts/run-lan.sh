@@ -22,7 +22,7 @@ if [ -f .env ]; then
   . ./.env
   set +a
 fi
-export OAUTH_ISSUER="http://$IP:8080"
+export OAUTH_ISSUER="http://$IP:8090"
 export OAUTH_MOBILE_REDIRECT_URI="chicktrack://oauth2/callback,exp://$IP:8081/--/oauth2/callback"
 
 # Use a Postgres that is already running on the port (Homebrew, Postgres.app); otherwise start the Docker one.

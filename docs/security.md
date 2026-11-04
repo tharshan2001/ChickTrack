@@ -15,7 +15,7 @@ Environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `OAUTH_ISSUER` | Public issuer URL, default `http://localhost:8080` |
+| `OAUTH_ISSUER` | Public issuer URL, default `http://localhost:8090` |
 | `OAUTH_ADMIN_USERNAME` | Bootstrap admin username |
 | `OAUTH_ADMIN_PASSWORD` | Bootstrap admin password |
 | `OAUTH_MOBILE_CLIENT_ID` | Public mobile client ID |
@@ -24,7 +24,7 @@ Environment variables:
 Relevant properties:
 
 ```properties
-app.oauth.issuer=${OAUTH_ISSUER:http://localhost:8080}
+app.oauth.issuer=${OAUTH_ISSUER:http://localhost:8090}
 app.oauth.admin.username=${OAUTH_ADMIN_USERNAME:admin}
 app.oauth.admin.password=${OAUTH_ADMIN_PASSWORD:change-me}
 app.oauth.client.mobile.id=${OAUTH_MOBILE_CLIENT_ID:chicktrack-mobile}

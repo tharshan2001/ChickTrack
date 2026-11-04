@@ -74,7 +74,7 @@ set +a
 
 The `.env` file is used by Docker Compose and can also be loaded into the shell before running the application locally.
 
-The API starts on `http://localhost:8080`.
+The API starts on `http://localhost:8090`.
 
 To use it from a phone on the same Wi-Fi (the mobile app in Expo Go or a development build), run
 `./scripts/run-lan.sh` instead. It loads `.env`, sets `OAUTH_ISSUER` to the Mac's LAN address and
@@ -87,11 +87,11 @@ Flyway creates the schema on startup. On first run, a bootstrap admin is created
 
 | URL | Purpose |
 |---|---|
-| `http://localhost:8080/swagger-ui.html` | Swagger UI |
-| `http://localhost:8080/v3/api-docs` | OpenAPI JSON |
-| `http://localhost:8080/actuator/health` | Health check |
-| `http://localhost:8080/.well-known/openid-configuration` | OIDC discovery |
-| `http://localhost:8080/login` | Form login for OAuth2 flow |
+| `http://localhost:8090/swagger-ui.html` | Swagger UI |
+| `http://localhost:8090/v3/api-docs` | OpenAPI JSON |
+| `http://localhost:8090/actuator/health` | Health check |
+| `http://localhost:8090/.well-known/openid-configuration` | OIDC discovery |
+| `http://localhost:8090/login` | Form login for OAuth2 flow |
 
 ## OAuth2
 
@@ -114,7 +114,7 @@ Configuration is read from environment variables with local defaults.
 | `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/chicktrack` | Database URL |
 | `SPRING_DATASOURCE_USERNAME` | `chicktrack` | Database user |
 | `SPRING_DATASOURCE_PASSWORD` | `chicktrack` | Database password |
-| `OAUTH_ISSUER` | `http://localhost:8080` | OAuth2 issuer |
+| `OAUTH_ISSUER` | `http://localhost:8090` | OAuth2 issuer |
 | `OAUTH_ADMIN_USERNAME` | `admin` | Bootstrap admin |
 | `OAUTH_ADMIN_PASSWORD` | `change-me` | Bootstrap admin password |
 | `OAUTH_MOBILE_CLIENT_ID` | `chicktrack-mobile` | Mobile client ID |

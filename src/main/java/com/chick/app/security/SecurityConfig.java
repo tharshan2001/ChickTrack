@@ -194,7 +194,7 @@ public class SecurityConfig {
 
 	@Bean
 	AuthorizationServerSettings authorizationServerSettings(
-			@Value("${app.oauth.issuer:http://localhost:8080}") String issuer) {
+			@Value("${app.oauth.issuer:http://localhost:8090}") String issuer) {
 		return AuthorizationServerSettings.builder().issuer(issuer).build();
 	}
 }

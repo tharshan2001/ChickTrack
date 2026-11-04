@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Configuration;
 public class OpenApiConfig {
 
 	@Bean
-	OpenAPI chickTrackOpenApi(@Value("${app.oauth.issuer:http://localhost:8080}") String issuer) {
+	OpenAPI chickTrackOpenApi(@Value("${app.oauth.issuer:http://localhost:8090}") String issuer) {
 		OAuthFlow authorizationCode = new OAuthFlow()
 				.authorizationUrl(issuer + "/oauth2/authorize")
 				.tokenUrl(issuer + "/oauth2/token")
