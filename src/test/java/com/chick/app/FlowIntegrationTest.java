@@ -94,30 +94,44 @@ class FlowIntegrationTest {
 				List.of(new ProcurementItemRequest(type, new BigDecimal("100"), new BigDecimal("800"),
 						CommissionMethod.FIXED, BigDecimal.ZERO, null)), null));
 
-		// Two drafts over the same 100 kg, dispatched at the same time: exactly one may succeed.
-		var d1 = distributions.create(new DistributionCreateRequest(branch, LocalDate.of(2026, 11, 4), null,
-				List.of(new DistributionItemRequest(type, new BigDecimal("80"))), null));
-		var d2 = distributions.create(new DistributionCreateRequest(branch, LocalDate.of(2026, 11, 4), null,
-				List.of(new DistributionItemRequest(type, new BigDecimal("80"))), null));
+		// Two drafts over the same 100 kg created at the same time: the first reserves the stock,
+		// the second is refused, so no draft ever promises weight another one holds.
 		ExecutorService pool = Executors.newFixedThreadPool(2);
 		CyclicBarrier barrier = new CyclicBarrier(2);
-		List<Future<String>> results = new ArrayList<>();
-		for (var d : List.of(d1, d2)) {
+		List<Future<Object>> results = new ArrayList<>();
+		for (int i = 0; i < 2; i++) {
 			results.add(pool.submit(() -> {
 				as("admin"); barrier.await();
-				try { distributions.dispatch(d.id()); return "OK"; }
+				try {
+					return distributions.create(new DistributionCreateRequest(branch, LocalDate.of(2026, 11, 4), null,
+							List.of(new DistributionItemRequest(type, new BigDecimal("80"))), null));
+				}
 				catch (BusinessException e) { return e.getCode(); }
 				catch (Exception e) { return e.getClass().getSimpleName(); }
 			}));
 		}
-		List<String> outcomes = new ArrayList<>();
+		List<Object> outcomes = new ArrayList<>();
 		for (var f : results) outcomes.add(f.get());
 		pool.shutdown();
-		assertThat(outcomes).containsOnlyOnce("OK");
-		UUID batchId = d1.items().get(0).stockBatchId();
-		assertThat(batches.findById(batchId).orElseThrow().getRemainingWeightKg()).isEqualByComparingTo("20");
+		assertThat(outcomes).filteredOn(o -> o instanceof DistributionResponse).hasSize(1);
+		assertThat(outcomes).contains("INSUFFICIENT_STOCK");
+		var dispatched = (DistributionResponse) outcomes.stream().filter(o -> o instanceof DistributionResponse).findFirst().orElseThrow();
+		UUID batchId = dispatched.items().get(0).stockBatchId();
+		var held = batches.findById(batchId).orElseThrow();
+		assertThat(held.getReservedWeightKg()).isEqualByComparingTo("80");
+		assertThat(held.getRemainingWeightKg()).isEqualByComparingTo("100");
 
-		var dispatched = outcomes.get(0).equals("OK") ? d1 : d2;
+		// A draft that is reversed releases its reservation.
+		var spare = distributions.create(new DistributionCreateRequest(branch, LocalDate.of(2026, 11, 4), null,
+				List.of(new DistributionItemRequest(type, new BigDecimal("20"))), null));
+		assertThat(batches.findById(batchId).orElseThrow().getReservedWeightKg()).isEqualByComparingTo("100");
+		distributions.reverse(spare.id(), new DistributionReverseRequest("not needed"));
+		assertThat(batches.findById(batchId).orElseThrow().getReservedWeightKg()).isEqualByComparingTo("80");
+
+		distributions.dispatch(dispatched.id());
+		held = batches.findById(batchId).orElseThrow();
+		assertThat(held.getRemainingWeightKg()).isEqualByComparingTo("20");
+		assertThat(held.getReservedWeightKg()).isEqualByComparingTo("0");
 		var line = distributions.get(dispatched.id()).items().get(0);
 
 		// Partial receipt rejected, full receipt with discrepancy accepted.
@@ -136,6 +150,19 @@ class FlowIntegrationTest {
 
 		settlements.create(new BranchSettlementCreateRequest(branch, LocalDate.of(2026, 11, 4), new BigDecimal("1000.00"),
 				"CASH", null, null, List.of(new BranchSettlementAllocationRequest(sale.id(), new BigDecimal("1000.00")))));
+
+		// Re-recording the day below what has been settled is refused.
+		assertThatThrownBy(() -> sales.record(new BranchSaleCreateRequest(branch, LocalDate.of(2026, 11, 4), null,
+				List.of(new BranchSaleItemRequest(type, new BigDecimal("1"))))))
+				.isInstanceOf(BusinessException.class).hasMessageContaining("settled");
+		assertThat(settlements.branchBalance(branch).outstandingAmount()).isEqualByComparingTo("39000.00");
+
+		// Procurements cannot be dated in the future.
+		assertThatThrownBy(() -> procurements.create(new ProcurementCreateRequest(supplier,
+				com.chick.app.common.time.BusinessTime.today().plusDays(1), null,
+				List.of(new ProcurementItemRequest(type, new BigDecimal("10"), new BigDecimal("800"),
+						CommissionMethod.FIXED, BigDecimal.ZERO, null)), null)))
+				.isInstanceOf(BusinessException.class).hasMessageContaining("future");
 
 		// Each document action leaves an audit record naming the actor.
 		Integer audited = jdbc.queryForObject(

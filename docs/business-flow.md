@@ -116,6 +116,7 @@ Rules:
 - Paid weight is treated as received weight; there is no partial receiving.
 - Status is `RECEIVED` from creation. No approval, receiving, or reversal step exists.
 - A stock batch is created automatically for every item with weight: `receivedWeightKg = paidWeightKg`, `remainingWeightKg = paidWeightKg`, `landedCostPerKg` from above.
+- The batch's receipt time follows the procurement date: now for today, the start of that business day for back-dated procurements, so FIFO issues older stock first. Procurement dates cannot be in the future.
 - Reference is allocated from the document sequence: `PRC-2026-000001`.
 
 ### 3.5 Warehouse Stock
@@ -126,19 +127,20 @@ Rules:
 - `LOSS` and `DAMAGE` movements that reference a distribution are branch-side discrepancies: the weight already left the warehouse at dispatch, so they do not reduce batch remaining weight.
 - Warehouse stock adjustments (`DAMAGE`, `LOSS`, `RETURN`, `ADJUSTMENT`, reference `STOCK_ADJUSTMENT`) do change remaining weight and are recorded in `stock_adjustments`. Warehouse stock reconciles as `RECEIPT - DISTRIBUTION + REVERSAL + adjustments = remaining weight`.
 - Remaining weight is updated inside the same transaction as the distribution and can never go negative.
-- FIFO is used **only** for warehouse issues: batches are ordered by receipt time and locked with `SELECT ... FOR UPDATE` before allocation.
+- FIFO is used for warehouse issues: batches are ordered by receipt time and locked with `SELECT ... FOR UPDATE` before allocation.
+- `reserved_weight_kg` is weight held by draft distributions. Available stock = remaining − reserved; new drafts and decreasing adjustments use only available stock.
 
 ### 3.6 Distribution to a Branch
 
 The warehouse sends stock to a branch.
 
 - The request carries the branch, the date, and per item: chicken type, weight to send, and the branch-set selling price per kg.
-- Stock is allocated FIFO across batches of that chicken type. If the available weight is short, the whole request is rejected with `INSUFFICIENT_STOCK` and nothing is mutated.
+- Stock is allocated FIFO across the available (unreserved) weight of batches of that chicken type and reserved for the draft. If the available weight is short, the whole request is rejected with `INSUFFICIENT_STOCK` and nothing is mutated.
 - Each allocated line snapshots: batch, weight, unit cost (landed cost of the batch), unit price (branch-set price).
 - Line math: `lineCost = weight × unitCost`, `lineRevenue = weight × unitPrice`, `lineMargin = lineRevenue - lineCost`.
 - Distribution expenses are allocated to lines by weight; the last line absorbs rounding.
 - Distribution totals: `totalWeightKg`, `totalCost`, `totalRevenue`, `totalMargin`, `expenseAmount`.
-- Dispatch moves the distribution to `DISPATCHED` and writes a `DISTRIBUTION` movement per line.
+- Dispatch turns the reservation into an issue (remaining and reserved weight both drop), moves the distribution to `DISPATCHED` and writes a `DISTRIBUTION` movement per line. Reversing a draft releases its reservation.
 
 ### 3.7 Branch Receiving
 
@@ -152,13 +154,14 @@ The warehouse sends stock to a branch.
 
 ### 3.8 Branch Daily Sales and Profit Marking
 
-The branch does not report quantities or chicken types and no FIFO costing happens at the branch.
+The branch records, per day, the weight it sold of each chicken type.
 
-- The branch enters **one total sales amount per branch per day**.
-- Cost for that day = landed cost of the stock the branch **received** that day: `received weight × landed cost assigned at dispatch`.
-- Profit or loss = `totalSales - cost`.
-- Recording the same branch and date again replaces the earlier figure and keeps the same reference (`SALE-2026-000001`).
-- The cost is captured when the day's sales are recorded; a receipt booked later does not retroactively change it.
+- Revenue per line = `weight sold × branch selling price` (the daily price set for that branch, chicken type and date; `PRICE_NOT_CONFIGURED` if missing).
+- Cost per line (the transfer value the branch owes us) is taken from the stock the branch still holds, oldest receipt first: weight already sold by other days is consumed first, then this day's weight. `transferPricePerKg` is that cost divided by the weight.
+- Branch profit = `revenue - transfer value`.
+- The branch cannot sell more than it has received minus what it has already sold (`INSUFFICIENT_BRANCH_STOCK`). Several lines for one chicken type share the same stock.
+- Recording the same branch and date again replaces that day's lines and keeps the same reference (`SALE-2026-000001`). It is refused if the new transfer value would fall below the amount already settled for that day; reverse the settlement first.
+- Sales, settlements, receipts and reversals for one branch run one at a time (the branch row is locked).
 
 ### 3.9 Branch Settlement
 
@@ -183,9 +186,9 @@ The branch does not report quantities or chicken types and no FIFO costing happe
 | Stock value | `stock_batches.remaining_weight_kg × landed_cost_per_kg` |
 | Dispatch value | `distributions.total_cost` and `distributions.total_revenue` |
 | Branch sales | `branch_sales.total_sales` |
-| Sales cost | `branch_sales.cost_amount` (stock received that day at dispatch cost) |
-| Profit | `branch_sales.profit` = total sales − cost |
-| Outstanding | entered sales − posted settlement allocations |
+| Branch transfer value | `branch_sales.transfer_value` (sold weight costed against branch stock still held, oldest receipt first) |
+| Branch profit | `branch_sales.branch_profit` = total sales − transfer value |
+| Outstanding | sales transfer value − posted settlement allocations |
 | Shrinkage | `inventory_movements` of type `LOSS` / `DAMAGE` |
 
 ## 5. Validations and Error Codes

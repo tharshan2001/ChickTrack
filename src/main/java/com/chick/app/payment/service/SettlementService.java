@@ -146,21 +146,15 @@ public class SettlementService {
 		branchAccess.require(branchId);
 		branches.findById(branchId)
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
-
-		BigDecimal transferValue = branchSales.findAll((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId))
-				.stream()
-				.map(BranchSale::getTransferValue)
-				.reduce(BigDecimal.ZERO, BigDecimal::add);
-
-		BigDecimal settled = settlements.findAll((root, query, cb) -> cb.and(
-				cb.equal(root.get("branch").get("id"), branchId),
-				cb.equal(root.get("status"), BranchSettlement.Status.POSTED)))
-				.stream()
-				.flatMap(settlement -> settlement.getAllocations().stream())
-				.map(BranchSettlementAllocation::getAmount)
-				.reduce(BigDecimal.ZERO, BigDecimal::add);
-
+		BigDecimal transferValue = branchSales.totalTransferValue(branchId);
+		BigDecimal settled = settlements.allocatedForBranch(branchId, BranchSettlement.Status.POSTED);
 		return new BalanceResponse(transferValue.subtract(settled).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+	}
+
+	/** Amount of posted settlements allocated to a branch sale. */
+	@Transactional(readOnly = true)
+	public BigDecimal settledAmount(UUID branchSaleId) {
+		return settlements.allocatedToSale(branchSaleId, BranchSettlement.Status.POSTED);
 	}
 
 	private BranchSettlement find(UUID id) {
@@ -169,13 +163,6 @@ public class SettlementService {
 	}
 
 	private BigDecimal saleOutstanding(BranchSale sale) {
-		BigDecimal settled = settlements.findAll((root, query, cb) -> cb.equal(root.get("status"), BranchSettlement.Status.POSTED))
-				.stream()
-				.flatMap(settlement -> settlement.getAllocations().stream())
-				.filter(allocation -> allocation.getBranchSale() != null
-						&& allocation.getBranchSale().getId().equals(sale.getId()))
-				.map(BranchSettlementAllocation::getAmount)
-				.reduce(BigDecimal.ZERO, BigDecimal::add);
-		return sale.getTransferValue().subtract(settled).max(BigDecimal.ZERO);
+		return sale.getTransferValue().subtract(settledAmount(sale.getId())).max(BigDecimal.ZERO);
 	}
 }

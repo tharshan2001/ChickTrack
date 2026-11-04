@@ -36,9 +36,18 @@ public class StockBatch extends BaseEntity {
 	@Column(name = "remaining_weight_kg", nullable = false, precision = 14, scale = 3)
 	private BigDecimal remainingWeightKg;
 
+	/** Weight held for draft distributions; not available to new drafts or adjustments. */
+	@Column(name = "reserved_weight_kg", nullable = false, precision = 14, scale = 3)
+	private BigDecimal reservedWeightKg = BigDecimal.ZERO;
+
 	@Column(name = "landed_cost_per_kg", nullable = false, precision = 14, scale = 4)
 	private BigDecimal landedCostPerKg;
 
 	@Column(name = "received_at", nullable = false)
 	private Instant receivedAt;
+
+	/** Remaining weight not held by a draft distribution. */
+	public BigDecimal availableWeightKg() {
+		return remainingWeightKg.subtract(reservedWeightKg);
+	}
 }

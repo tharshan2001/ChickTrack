@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -13,12 +15,10 @@ import com.chick.app.chicken.domain.ChickenType;
 import com.chick.app.chicken.repository.ChickenTypeRepository;
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.service.DocumentNumberService;
-import com.chick.app.distribution.domain.BranchReceipt;
-import com.chick.app.distribution.domain.BranchReceiptItem;
-import com.chick.app.distribution.domain.Distribution;
-import com.chick.app.distribution.domain.DistributionItem;
-import com.chick.app.distribution.domain.DistributionStatus;
-import com.chick.app.distribution.repository.DistributionRepository;
+import com.chick.app.distribution.repository.BranchReceiptRepository;
+import com.chick.app.distribution.repository.ReceivedLine;
+import com.chick.app.identity.security.BranchAccessService;
+import com.chick.app.payment.service.SettlementService;
 import com.chick.app.pricing.dto.DailyPriceResponse;
 import com.chick.app.pricing.service.DailyPriceService;
 import com.chick.app.sales.domain.BranchSale;
@@ -29,56 +29,39 @@ import com.chick.app.sales.repository.BranchSaleRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
 
 class BranchSaleServiceTest {
 
-	@Mock
-	private BranchSaleRepository sales;
+	private static final LocalDate DAY = LocalDate.of(2026, 1, 15);
 
-	@Mock
-	private BranchRepository branches;
-
-	@Mock
-	private ChickenTypeRepository chickenTypes;
-
-	@Mock
-	private DistributionRepository distributions;
-
-	@Mock
-	private DailyPriceService dailyPrices;
-
-	@Mock
-	private BranchSaleMapper mapper;
-
-	@Mock
-	private DocumentNumberService documentNumbers;
-
-	@Mock
-	private com.chick.app.identity.security.BranchAccessService branchAccess;
+	private final BranchSaleRepository sales = mock(BranchSaleRepository.class);
+	private final BranchRepository branches = mock(BranchRepository.class);
+	private final ChickenTypeRepository chickenTypes = mock(ChickenTypeRepository.class);
+	private final DailyPriceService dailyPrices = mock(DailyPriceService.class);
+	private final DocumentNumberService documentNumbers = mock(DocumentNumberService.class);
+	private final BranchReceiptRepository receipts = mock(BranchReceiptRepository.class);
+	private final SettlementService settlements = mock(SettlementService.class);
 
 	private BranchSaleService service;
 	private Branch branch;
 	private ChickenType chickenType;
+	private final List<ReceivedLine> received = new ArrayList<>();
+	private final List<Object[]> soldElsewhere = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
-		MockitoAnnotations.openMocks(this);
-		service = new BranchSaleService(sales, branches, chickenTypes, distributions, dailyPrices, mapper,
-				documentNumbers, branchAccess);
+		service = new BranchSaleService(sales, branches, chickenTypes, dailyPrices, mock(BranchSaleMapper.class),
+				documentNumbers, mock(BranchAccessService.class), receipts, settlements);
 
 		branch = new Branch();
 		branch.setId(UUID.randomUUID());
-		branch.setCode("BR-001");
-		branch.setName("Main Branch");
-
 		chickenType = new ChickenType();
 		chickenType.setId(UUID.randomUUID());
 		chickenType.setName("Broiler");
@@ -88,7 +71,10 @@ class BranchSaleServiceTest {
 		when(chickenTypes.findById(chickenType.getId())).thenReturn(Optional.of(chickenType));
 		when(documentNumbers.next("BRANCH_SALE", "SALE")).thenReturn("SALE-2026-000001");
 		when(sales.save(any(BranchSale.class))).thenAnswer(invocation -> invocation.getArgument(0));
-		when(sales.findAll(any(org.springframework.data.jpa.domain.Specification.class))).thenReturn(List.of());
+		when(sales.findByBranchAndSaleDate(eq(branch), any(LocalDate.class))).thenReturn(Optional.empty());
+		when(receipts.receivedLines(eq(branch.getId()), any())).thenReturn(received);
+		when(sales.soldWeightByChickenType(eq(branch.getId()), any())).thenReturn(soldElsewhere);
+		when(settlements.settledAmount(any())).thenReturn(BigDecimal.ZERO);
 		when(dailyPrices.current(eq(chickenType.getId()), eq(branch.getId()), any(), any()))
 				.thenReturn(new DailyPriceResponse(
 						UUID.randomUUID(), chickenType.getId(), branch.getId(), null,
@@ -97,21 +83,11 @@ class BranchSaleServiceTest {
 
 	@Test
 	void marksBranchProfitAgainstTransferPrice() {
-		when(distributions.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
-				.thenReturn(List.of(receivedDistribution(new BigDecimal("400.000"))));
-		when(sales.findByBranchAndSaleDate(eq(branch), any(LocalDate.class))).thenReturn(Optional.empty());
+		receive("400.000", "900.0000");
 
-		service.record(new BranchSaleCreateRequest(
-				branch.getId(),
-				LocalDate.of(2026, 1, 15),
-				"Daily counter sales",
-				List.of(new BranchSaleItemRequest(chickenType.getId(), new BigDecimal("100.000")))));
+		BranchSale sale = record("100.000");
 
-		ArgumentCaptor<BranchSale> captor = ArgumentCaptor.forClass(BranchSale.class);
-		verify(sales).save(captor.capture());
-		BranchSale sale = captor.getValue();
 		assertThat(sale.getReference()).isEqualTo("SALE-2026-000001");
-		assertThat(sale.getItems()).hasSize(1);
 		assertThat(sale.getItems().get(0).getSellingPricePerKg()).isEqualByComparingTo("1000.0000");
 		assertThat(sale.getItems().get(0).getTransferPricePerKg()).isEqualByComparingTo("900.0000");
 		assertThat(sale.getTotalSales()).isEqualByComparingTo("100000.00");
@@ -120,38 +96,63 @@ class BranchSaleServiceTest {
 	}
 
 	@Test
-	void rejectsSellingMoreThanTheBranchHasInStock() {
-		when(distributions.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
-				.thenReturn(List.of(receivedDistribution(new BigDecimal("50.000"))));
+	void costsTheSaleAgainstTheOldestStockStillHeld() {
+		receive("100.000", "900.0000");
+		receive("100.000", "950.0000");
+		soldElsewhere.add(new Object[] {chickenType.getId(), new BigDecimal("80.000")});
 
-		assertThatThrownBy(() -> service.record(new BranchSaleCreateRequest(
-				branch.getId(),
-				LocalDate.of(2026, 1, 15),
-				null,
-				List.of(new BranchSaleItemRequest(chickenType.getId(), new BigDecimal("100.000"))))))
+		BranchSale sale = record("50.000");
+
+		// 20 kg left of the 900 layer, then 30 kg of the 950 layer.
+		assertThat(sale.getTransferValue()).isEqualByComparingTo("46500.00");
+		assertThat(sale.getItems().get(0).getTransferPricePerKg()).isEqualByComparingTo("930.0000");
+	}
+
+	@Test
+	void linesForTheSameChickenTypeShareTheStock() {
+		receive("100.000", "900.0000");
+
+		assertThatThrownBy(() -> service.record(new BranchSaleCreateRequest(branch.getId(), DAY, null, List.of(
+				new BranchSaleItemRequest(chickenType.getId(), new BigDecimal("60.000")),
+				new BranchSaleItemRequest(chickenType.getId(), new BigDecimal("60.000"))))))
 				.isInstanceOf(BusinessException.class)
 				.hasMessageContaining("available to sell");
 	}
 
-	private Distribution receivedDistribution(BigDecimal receivedWeightKg) {
-		DistributionItem line = new DistributionItem();
-		line.setChickenType(chickenType);
-		line.setWeightKg(new BigDecimal("400.000"));
-		line.setUnitCost(new BigDecimal("855.6000"));
-		line.setTransferPricePerKg(new BigDecimal("900.0000"));
+	@Test
+	void rejectsSellingMoreThanTheBranchHasInStock() {
+		receive("50.000", "900.0000");
 
-		BranchReceiptItem receiptItem = new BranchReceiptItem();
-		receiptItem.setDistributionItem(line);
-		receiptItem.setReceivedWeightKg(receivedWeightKg);
+		assertThatThrownBy(() -> record("100.000"))
+				.isInstanceOf(BusinessException.class)
+				.hasMessageContaining("available to sell");
+	}
 
-		BranchReceipt receipt = new BranchReceipt();
-		receipt.setReceivedAt(Instant.parse("2026-01-15T10:00:00Z"));
-		receipt.getItems().add(receiptItem);
+	@Test
+	void reRecordingCannotDropBelowTheAmountAlreadySettled() {
+		receive("400.000", "900.0000");
+		BranchSale existing = new BranchSale();
+		existing.setId(UUID.randomUUID());
+		existing.setReference("SALE-2026-000009");
+		when(sales.findByBranchAndSaleDate(eq(branch), eq(DAY))).thenReturn(Optional.of(existing));
+		when(settlements.settledAmount(existing.getId())).thenReturn(new BigDecimal("90000.00"));
 
-		Distribution distribution = new Distribution();
-		distribution.setBranch(branch);
-		distribution.setStatus(DistributionStatus.RECEIVED);
-		distribution.getReceipts().add(receipt);
-		return distribution;
+		assertThatThrownBy(() -> record("50.000"))
+				.isInstanceOf(BusinessException.class)
+				.hasMessageContaining("already have 90000.00 settled");
+		verify(sales, never()).save(any());
+	}
+
+	private void receive(String weight, String transferPrice) {
+		received.add(new ReceivedLine(chickenType.getId(), Instant.parse("2026-01-01T00:00:00Z").plusSeconds(received.size()),
+				new BigDecimal(weight), new BigDecimal(transferPrice)));
+	}
+
+	private BranchSale record(String weight) {
+		service.record(new BranchSaleCreateRequest(branch.getId(), DAY, null,
+				List.of(new BranchSaleItemRequest(chickenType.getId(), new BigDecimal(weight)))));
+		ArgumentCaptor<BranchSale> captor = ArgumentCaptor.forClass(BranchSale.class);
+		verify(sales).save(captor.capture());
+		return captor.getValue();
 	}
 }

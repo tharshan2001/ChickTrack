@@ -11,6 +11,8 @@ public record StockBatchResponse(
 		UUID procurementItemId,
 		BigDecimal receivedWeightKg,
 		BigDecimal remainingWeightKg,
+		BigDecimal reservedWeightKg,
+		BigDecimal availableWeightKg,
 		BigDecimal landedCostPerKg,
 		BigDecimal remainingValue,
 		Instant receivedAt,

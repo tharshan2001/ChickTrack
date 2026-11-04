@@ -117,6 +117,9 @@ public class ProcurementService {
 	public ProcurementResponse create(ProcurementCreateRequest request) {
 		Supplier supplier = suppliers.findById(request.supplierId())
 				.orElseThrow(() -> new ResourceNotFoundException("Supplier", request.supplierId()));
+		if (request.procurementDate().isAfter(com.chick.app.common.time.BusinessTime.today())) {
+			throw new BusinessException("VALIDATION_FAILED", "Procurement date cannot be in the future", HttpStatus.BAD_REQUEST);
+		}
 
 		Procurement procurement = mapper.toEntity(request);
 		procurement.setSupplier(supplier);
@@ -161,7 +164,7 @@ public class ProcurementService {
 				batch.setReceivedWeightKg(item.getReceivedWeightKg());
 				batch.setRemainingWeightKg(item.getReceivedWeightKg());
 				batch.setLandedCostPerKg(item.getLandedCostPerKg());
-				batch.setReceivedAt(java.time.Instant.now());
+				batch.setReceivedAt(receivedAt(saved.getProcurementDate()));
 				stockBatches.save(batch);
 
 				InventoryMovement movement = new InventoryMovement();
@@ -281,5 +284,16 @@ public class ProcurementService {
 
 	private ProcurementResponse toResponse(Procurement procurement) {
 		return mapper.toResponse(procurement);
+	}
+
+	/**
+	 * When the stock arrived, for FIFO ordering: now for today's procurements, otherwise the start
+	 * of the procurement's business day so back-dated stock is issued before newer stock.
+	 */
+	private static java.time.Instant receivedAt(java.time.LocalDate procurementDate) {
+		java.time.LocalDate today = com.chick.app.common.time.BusinessTime.today();
+		return procurementDate.isBefore(today)
+				? com.chick.app.common.time.BusinessTime.startOf(procurementDate)
+				: java.time.Instant.now();
 	}
 }

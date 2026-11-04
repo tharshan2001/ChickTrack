@@ -75,15 +75,9 @@ class SettlementServiceTest {
 
 	@Test
 	void branchBalanceIsEnteredSalesMinusPostedSettlements() {
-		when(branchSales.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
-				.thenReturn(List.of(sale));
-		BranchSettlement posted = new BranchSettlement();
-		posted.setStatus(BranchSettlement.Status.POSTED);
-		BranchSettlementAllocation allocation = new BranchSettlementAllocation();
-		allocation.setAmount(new BigDecimal("150000.00"));
-		posted.getAllocations().add(allocation);
-		when(settlements.findAll(any(org.springframework.data.jpa.domain.Specification.class)))
-				.thenReturn(List.of(posted));
+		when(branchSales.totalTransferValue(branch.getId())).thenReturn(new BigDecimal("340528.80"));
+		when(settlements.allocatedForBranch(branch.getId(), BranchSettlement.Status.POSTED))
+				.thenReturn(new BigDecimal("150000.00"));
 
 		BalanceResponse balance = service.branchBalance(branch.getId());
 
@@ -92,7 +86,7 @@ class SettlementServiceTest {
 
 	@Test
 	void rejectsAllocationAboveTheOutstandingAmountOfTheSale() {
-		when(settlements.findAll(any(org.springframework.data.jpa.domain.Specification.class))).thenReturn(List.of());
+		when(settlements.allocatedToSale(sale.getId(), BranchSettlement.Status.POSTED)).thenReturn(BigDecimal.ZERO);
 
 		assertThatThrownBy(() -> service.create(new BranchSettlementCreateRequest(
 				branch.getId(),
@@ -108,7 +102,7 @@ class SettlementServiceTest {
 
 	@Test
 	void rejectsRepeatedAllocationsAgainstTheSameSaleThatTogetherExceedOutstanding() {
-		when(settlements.findAll(any(org.springframework.data.jpa.domain.Specification.class))).thenReturn(List.of());
+		when(settlements.allocatedToSale(sale.getId(), BranchSettlement.Status.POSTED)).thenReturn(BigDecimal.ZERO);
 
 		assertThatThrownBy(() -> service.create(new BranchSettlementCreateRequest(
 				branch.getId(),

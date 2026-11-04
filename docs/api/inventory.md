@@ -13,7 +13,7 @@ Adjust: `OWNER`, `WAREHOUSE_MANAGER`.
 GET /api/v1/stock-batches?chickenTypeId=...&available=true&page=0&size=20
 ```
 
-`available=true` returns batches with remaining weight, `false` returns empty batches.
+`available=true` returns batches with unreserved weight, `false` returns batches that are empty or fully reserved. `reservedWeightKg` is held by draft distributions.
 
 ```json
 {
@@ -26,6 +26,8 @@ GET /api/v1/stock-batches?chickenTypeId=...&available=true&page=0&size=20
         "procurementItemId": "00000000-0000-0000-0000-000000000000",
         "receivedWeightKg": "990.000",
         "remainingWeightKg": "600.000",
+        "reservedWeightKg": "100.000",
+        "availableWeightKg": "500.000",
         "landedCostPerKg": "838.3838",
         "remainingValue": "503030.28",
         "receivedAt": "2026-01-15T10:00:00Z",
@@ -95,7 +97,7 @@ Response:
 ## Rules
 
 - The batch is locked while it is adjusted.
-- Remaining weight cannot go below zero (`INSUFFICIENT_STOCK`) or above the batch's received weight (`BUSINESS_RULE_VIOLATION`).
+- A decrease cannot exceed the batch's available (unreserved) weight (`INSUFFICIENT_STOCK`); an increase cannot take remaining weight above the received weight (`BUSINESS_RULE_VIOLATION`).
 - Every adjustment writes a `stock_adjustments` row and a matching `inventory_movements` row with `referenceType = STOCK_ADJUSTMENT`. Both are append-only; correct a mistake with an opposite adjustment.
 - A reason is required. Adjustments are audited.
 

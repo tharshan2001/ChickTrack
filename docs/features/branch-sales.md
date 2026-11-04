@@ -16,12 +16,10 @@ Capture what a branch actually sold, at the selling price we set for that branch
 
 ## Rules
 
-- A branch enters one total sales amount per branch per day.
-- No quantity, weight, or chicken type is captured at the branch, so no FIFO costing happens at sale time.
-- Recording sales again for the same branch and date replaces the earlier figure and keeps the same reference.
-- Cost is taken from the stock the branch received on that date: received weight multiplied by the landed cost assigned at dispatch.
-- Profit or loss is `total sales - cost`.
-- Cost is captured when the day's sales are recorded; receipts recorded later do not retroactively change it.
+- A branch enters one sales entry per day, with the weight sold per chicken type.
+- Revenue uses the branch selling price for that branch, chicken type and date.
+- The transfer value (what the branch owes us) costs the sold weight against the stock the branch still holds, oldest receipt first.
+- Recording sales again for the same branch and date replaces that day's lines and keeps the same reference; it is refused if it would drop below the amount already settled for that day.
 - Branch settlements settle these sales: outstanding balance = entered sales - posted settlements.
 
 ## Data

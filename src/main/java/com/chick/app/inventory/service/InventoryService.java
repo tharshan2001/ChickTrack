@@ -59,10 +59,10 @@ public class InventoryService {
 			specification = specification.and((root, query, cb) -> cb.equal(root.get("chickenType").get("id"), chickenTypeId));
 		}
 		if (Boolean.TRUE.equals(available)) {
-			specification = specification.and((root, query, cb) -> cb.greaterThan(root.get("remainingWeightKg"), BigDecimal.ZERO));
+			specification = specification.and((root, query, cb) -> cb.greaterThan(root.get("remainingWeightKg"), root.get("reservedWeightKg")));
 		}
 		else if (Boolean.FALSE.equals(available)) {
-			specification = specification.and((root, query, cb) -> cb.equal(root.get("remainingWeightKg"), BigDecimal.ZERO));
+			specification = specification.and((root, query, cb) -> cb.lessThanOrEqualTo(root.get("remainingWeightKg"), root.get("reservedWeightKg")));
 		}
 		LocalDate today = BusinessTime.today();
 		return batches.findAll(specification, pageable).map(batch -> toResponse(batch, today));
@@ -144,9 +144,12 @@ public class InventoryService {
 			}
 		}
 		else {
-			if (weight.compareTo(remaining) > 0) {
+			BigDecimal available = batch.availableWeightKg();
+			if (weight.compareTo(available) > 0) {
 				throw new BusinessException("INSUFFICIENT_STOCK",
-						"Batch has only " + remaining.toPlainString() + " kg remaining", HttpStatus.CONFLICT);
+						"Batch has only " + available.toPlainString() + " kg available ("
+								+ batch.getReservedWeightKg().toPlainString() + " kg reserved for draft distributions)",
+						HttpStatus.CONFLICT);
 			}
 			newRemaining = remaining.subtract(weight);
 		}
@@ -187,6 +190,8 @@ public class InventoryService {
 				batch.getProcurementItem().getId(),
 				batch.getReceivedWeightKg(),
 				batch.getRemainingWeightKg(),
+				batch.getReservedWeightKg(),
+				batch.availableWeightKg(),
 				batch.getLandedCostPerKg(),
 				batch.getRemainingWeightKg().multiply(batch.getLandedCostPerKg()).setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 				batch.getReceivedAt(),

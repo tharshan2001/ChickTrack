@@ -59,10 +59,10 @@ Response:
 ```
 
 - `sellingPricePerKg` is the branch selling price from `daily_prices` for the branch, chicken type, and date.
-- `transferPricePerKg` is the average transfer price of the stock the branch received for that chicken type.
+- `transferPricePerKg` is the transfer cost of the weight sold, taken from the stock the branch still holds, oldest receipt first.
 - `transferValue` is what the branch owes us; `branchProfit` is what the branch earns.
 
-Recording the same branch and date again updates the existing entry and returns the same reference.
+Recording the same branch and date again updates the existing entry and returns the same reference. It is refused (`BUSINESS_RULE_VIOLATION`, 409) if the new transfer value is below the amount already settled for that day.
 
 ## List Sales
 

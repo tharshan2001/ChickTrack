@@ -8,9 +8,12 @@ import com.chick.app.chicken.repository.ChickenTypeRepository;
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.exception.ResourceNotFoundException;
 import com.chick.app.common.service.DocumentNumberService;
-import com.chick.app.distribution.domain.Distribution;
 import com.chick.app.distribution.domain.DistributionStatus;
-import com.chick.app.distribution.repository.DistributionRepository;
+import com.chick.app.distribution.repository.BranchReceiptRepository;
+import com.chick.app.distribution.repository.ReceivedLine;
+import com.chick.app.payment.service.SettlementService;
+import java.util.ArrayList;
+import java.util.List;
 import com.chick.app.identity.security.BranchAccessService;
 import com.chick.app.pricing.dto.DailyPriceResponse;
 import com.chick.app.pricing.service.DailyPriceService;
@@ -49,29 +52,32 @@ public class BranchSaleService {
 	private final BranchSaleRepository sales;
 	private final BranchRepository branches;
 	private final ChickenTypeRepository chickenTypes;
-	private final DistributionRepository distributions;
 	private final DailyPriceService dailyPrices;
 	private final BranchSaleMapper mapper;
 	private final DocumentNumberService documentNumbers;
 	private final BranchAccessService branchAccess;
+	private final BranchReceiptRepository receipts;
+	private final SettlementService settlements;
 
 	public BranchSaleService(
 			BranchSaleRepository sales,
 			BranchRepository branches,
 			ChickenTypeRepository chickenTypes,
-			DistributionRepository distributions,
 			DailyPriceService dailyPrices,
 			BranchSaleMapper mapper,
 			DocumentNumberService documentNumbers,
-			BranchAccessService branchAccess) {
+			BranchAccessService branchAccess,
+			BranchReceiptRepository receipts,
+			SettlementService settlements) {
 		this.sales = sales;
 		this.branches = branches;
 		this.chickenTypes = chickenTypes;
-		this.distributions = distributions;
 		this.dailyPrices = dailyPrices;
 		this.mapper = mapper;
 		this.documentNumbers = documentNumbers;
 		this.branchAccess = branchAccess;
+		this.receipts = receipts;
+		this.settlements = settlements;
 	}
 
 	@Transactional
@@ -102,8 +108,8 @@ public class BranchSaleService {
 					.orElseThrow(() -> new ResourceNotFoundException("ChickenType", itemRequest.chickenTypeId()));
 			BigDecimal weight = itemRequest.weightKg().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
 
-			BranchStock chickenStock = stock.get(chickenType.getId());
-			BigDecimal available = chickenStock == null ? BigDecimal.ZERO : chickenStock.availableWeight();
+			BranchStock chickenStock = stock.computeIfAbsent(chickenType.getId(), id -> new BranchStock());
+			BigDecimal available = chickenStock.availableWeight();
 			if (weight.compareTo(available) > 0) {
 				throw new BusinessException("INSUFFICIENT_BRANCH_STOCK",
 						"Branch has " + available.stripTrailingZeros().toPlainString()
@@ -112,9 +118,9 @@ public class BranchSaleService {
 			}
 
 			BigDecimal sellingPrice = resolveSellingPrice(chickenType.getId(), branch.getId(), effectiveAt);
-			BigDecimal transferPrice = chickenStock == null
-					? BigDecimal.ZERO.setScale(COST_SCALE)
-					: chickenStock.transferPricePerKg();
+			// Cost the sold weight against the stock the branch still holds, oldest receipt first.
+			BigDecimal cost = chickenStock.take(weight).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+			BigDecimal transferPrice = cost.divide(weight, COST_SCALE, RoundingMode.HALF_UP);
 
 			BranchSaleItem item = new BranchSaleItem();
 			item.setBranchSale(sale);
@@ -123,7 +129,7 @@ public class BranchSaleService {
 			item.setSellingPricePerKg(sellingPrice);
 			item.setTransferPricePerKg(transferPrice);
 			item.setRevenue(weight.multiply(sellingPrice).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-			item.setCost(weight.multiply(transferPrice).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+			item.setCost(cost);
 			item.setProfit(item.getRevenue().subtract(item.getCost()));
 			sale.getItems().add(item);
 
@@ -134,6 +140,17 @@ public class BranchSaleService {
 		sale.setTotalSales(totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		sale.setTransferValue(transferValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		sale.setBranchProfit(totalSales.subtract(transferValue).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+
+		if (sale.getId() != null) {
+			BigDecimal settled = settlements.settledAmount(sale.getId());
+			if (sale.getTransferValue().compareTo(settled) < 0) {
+				throw new BusinessException("BUSINESS_RULE_VIOLATION",
+						"This day's sales already have " + settled.toPlainString()
+								+ " settled; the new transfer value of " + sale.getTransferValue().toPlainString()
+								+ " is lower. Reverse the settlement first.",
+						HttpStatus.CONFLICT);
+			}
+		}
 
 		return mapper.toResponse(sales.save(sale));
 	}
@@ -191,58 +208,53 @@ public class BranchSaleService {
 		return price.sellingPricePerKg();
 	}
 
+	/**
+	 * Stock the branch holds per chicken type: its received lines as cost layers, oldest first,
+	 * with the weight already sold (by sales other than {@code excludedSaleId}) consumed from the front.
+	 */
 	private Map<UUID, BranchStock> branchStock(Branch branch, UUID excludedSaleId) {
 		Map<UUID, BranchStock> stock = new HashMap<>();
-
-		Specification<Distribution> specification = (root, query, cb) -> cb.and(
-				cb.equal(root.get("branch").get("id"), branch.getId()),
-				root.get("status").in(RECEIVED_STATUSES));
-		for (Distribution distribution : distributions.findAll(specification)) {
-			for (var receipt : distribution.getReceipts()) {
-				for (var receiptItem : receipt.getItems()) {
-					var line = receiptItem.getDistributionItem();
-					BranchStock chickenStock = stock.computeIfAbsent(
-							line.getChickenType().getId(),
-							id -> new BranchStock());
-					chickenStock.receivedWeight = chickenStock.receivedWeight.add(receiptItem.getReceivedWeightKg());
-					chickenStock.transferValue = chickenStock.transferValue.add(receiptItem.getReceivedWeightKg()
-							.multiply(line.getTransferPricePerKg())
-							.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-				}
-			}
+		for (ReceivedLine line : receipts.receivedLines(branch.getId(), RECEIVED_STATUSES)) {
+			stock.computeIfAbsent(line.chickenTypeId(), id -> new BranchStock()).layers.add(line);
 		}
-
-		Specification<BranchSale> salesSpec =
-				(root, query, cb) -> cb.equal(root.get("branch").get("id"), branch.getId());
-		for (BranchSale sale : sales.findAll(salesSpec)) {
-			if (excludedSaleId != null && excludedSaleId.equals(sale.getId())) {
-				continue;
-			}
-			for (BranchSaleItem item : sale.getItems()) {
-				BranchStock chickenStock = stock.computeIfAbsent(
-						item.getChickenType().getId(),
-						id -> new BranchStock());
-				chickenStock.soldWeight = chickenStock.soldWeight.add(item.getWeightKg());
-			}
+		UUID excluded = excludedSaleId != null ? excludedSaleId : UUID.randomUUID();
+		for (Object[] row : sales.soldWeightByChickenType(branch.getId(), excluded)) {
+			BranchStock chickenStock = stock.computeIfAbsent((UUID) row[0], id -> new BranchStock());
+			chickenStock.take((BigDecimal) row[1]);
 		}
-
 		return stock;
 	}
 
 	private static final class BranchStock {
-		BigDecimal receivedWeight = BigDecimal.ZERO;
-		BigDecimal transferValue = BigDecimal.ZERO;
-		BigDecimal soldWeight = BigDecimal.ZERO;
+
+		final List<ReceivedLine> layers = new ArrayList<>();
+		private int layer;
+		private BigDecimal usedInLayer = BigDecimal.ZERO;
+		private BigDecimal consumed = BigDecimal.ZERO;
 
 		BigDecimal availableWeight() {
-			return receivedWeight.subtract(soldWeight).setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
+			BigDecimal received = layers.stream().map(ReceivedLine::weightKg).reduce(BigDecimal.ZERO, BigDecimal::add);
+			return received.subtract(consumed).max(BigDecimal.ZERO).setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
 		}
 
-		BigDecimal transferPricePerKg() {
-			if (receivedWeight.compareTo(BigDecimal.ZERO) == 0) {
-				return BigDecimal.ZERO.setScale(COST_SCALE);
+		/** Consumes weight from the oldest layers and returns its transfer cost (unrounded). */
+		BigDecimal take(BigDecimal weight) {
+			BigDecimal remaining = weight;
+			BigDecimal cost = BigDecimal.ZERO;
+			while (remaining.signum() > 0 && layer < layers.size()) {
+				ReceivedLine current = layers.get(layer);
+				BigDecimal left = current.weightKg().subtract(usedInLayer);
+				BigDecimal used = left.min(remaining);
+				cost = cost.add(used.multiply(current.transferPricePerKg()));
+				usedInLayer = usedInLayer.add(used);
+				remaining = remaining.subtract(used);
+				if (usedInLayer.compareTo(current.weightKg()) >= 0) {
+					layer++;
+					usedInLayer = BigDecimal.ZERO;
+				}
 			}
-			return transferValue.divide(receivedWeight, COST_SCALE, RoundingMode.HALF_UP);
+			consumed = consumed.add(weight.subtract(remaining));
+			return cost;
 		}
 	}
 }

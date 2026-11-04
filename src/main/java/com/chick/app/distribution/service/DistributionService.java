@@ -146,7 +146,8 @@ public class DistributionService {
 		distribution.setStatus(DistributionStatus.DRAFT);
 		distribution.setReference(documentNumbers.next("DISTRIBUTION", "DST"));
 
-		// Validate and allocate stock first; stock is only decremented on dispatch so drafts never consume stock.
+		// Allocate FIFO from unreserved stock and reserve it, so two drafts can never promise the same weight.
+		// Remaining weight is only reduced on dispatch.
 		Map<UUID, BigDecimal> availableByBatch = new HashMap<>();
 		List<AllocatedItem> allocations = new ArrayList<>();
 		for (DistributionItemRequest itemRequest : request.items()) {
@@ -155,7 +156,7 @@ public class DistributionService {
 			List<StockBatch> batches = stockBatches.findAvailableByChickenType(chickenType);
 			BigDecimal remainingToAllocate = itemRequest.weightKg().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
 			BigDecimal available = batches.stream()
-					.map(batch -> availableByBatch.computeIfAbsent(batch.getId(), id -> batch.getRemainingWeightKg()))
+					.map(batch -> availableByBatch.computeIfAbsent(batch.getId(), id -> batch.availableWeightKg()))
 					.reduce(BigDecimal.ZERO, BigDecimal::add);
 			if (available.compareTo(remainingToAllocate) < 0) {
 				throw new BusinessException("INSUFFICIENT_STOCK",
@@ -168,7 +169,7 @@ public class DistributionService {
 					break;
 				}
 				BigDecimal batchAvailable = availableByBatch.computeIfAbsent(
-						batch.getId(), id -> batch.getRemainingWeightKg());
+						batch.getId(), id -> batch.availableWeightKg());
 				BigDecimal allocate = batchAvailable.min(remainingToAllocate);
 				if (allocate.compareTo(BigDecimal.ZERO) <= 0) {
 					continue;
@@ -184,9 +185,10 @@ public class DistributionService {
 			}
 		}
 
-		// Create distribution items; batches are decremented when the distribution is dispatched.
 		for (AllocatedItem allocation : allocations) {
 			StockBatch batch = allocation.batch;
+			batch.setReservedWeightKg(batch.getReservedWeightKg().add(allocation.weight));
+			stockBatches.save(batch);
 			DistributionItem item = new DistributionItem();
 			item.setDistribution(distribution);
 			item.setStockBatch(batch);
@@ -259,13 +261,18 @@ public class DistributionService {
 		for (var entry : weightByBatch.entrySet()) {
 			StockBatch batch = batchesById.get(entry.getKey());
 			BigDecimal required = entry.getValue().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
-			if (batch.getRemainingWeightKg().compareTo(required) < 0) {
+			// This draft's own reservation covers it; anything beyond must come from unreserved stock.
+			BigDecimal ownReservation = batch.getReservedWeightKg().min(required);
+			BigDecimal reservedByOthers = batch.getReservedWeightKg().subtract(ownReservation);
+			if (batch.getRemainingWeightKg().subtract(reservedByOthers).compareTo(required) < 0) {
 				throw new BusinessException("INSUFFICIENT_STOCK",
 						"Insufficient stock for chicken type " + batch.getChickenType().getId(), HttpStatus.CONFLICT);
 			}
 		}
 		for (var entry : weightByBatch.entrySet()) {
 			StockBatch batch = batchesById.get(entry.getKey());
+			batch.setReservedWeightKg(batch.getReservedWeightKg().subtract(
+					batch.getReservedWeightKg().min(entry.getValue())));
 			batch.setRemainingWeightKg(batch.getRemainingWeightKg().subtract(entry.getValue()));
 			stockBatches.save(batch);
 		}
@@ -365,7 +372,16 @@ public class DistributionService {
 		Distribution distribution = findAccessible(id);
 		branches.lockById(distribution.getBranch().getId());
 		if (distribution.getStatus() == DistributionStatus.DRAFT) {
-			// Drafts never decremented stock, so there is nothing to restore.
+			// Drafts only reserved stock; release the reservation.
+			Map<UUID, BigDecimal> reservedByBatch = new LinkedHashMap<>();
+			for (DistributionItem item : distribution.getItems()) {
+				reservedByBatch.merge(item.getStockBatch().getId(), item.getWeightKg(), BigDecimal::add);
+			}
+			for (StockBatch batch : stockBatches.lockAllById(reservedByBatch.keySet())) {
+				BigDecimal release = batch.getReservedWeightKg().min(reservedByBatch.get(batch.getId()));
+				batch.setReservedWeightKg(batch.getReservedWeightKg().subtract(release));
+				stockBatches.save(batch);
+			}
 			distribution.setStatus(DistributionStatus.REVERSED);
 			distribution.setReversalReason(request.reason());
 			return toResponse(distributions.save(distribution));
