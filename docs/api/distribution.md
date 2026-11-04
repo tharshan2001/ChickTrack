@@ -19,8 +19,7 @@ Idempotency-Key: <uuid>
   "items": [
     {
       "chickenTypeId": "00000000-0000-0000-0000-000000000000",
-      "weightKg": "150.000",
-      "sellingPricePerKg": "1100.0000"
+      "weightKg": "150.000"
     }
   ]
 }
@@ -86,9 +85,23 @@ Idempotency-Key: <uuid>
 - `SHORT_DELIVERY`
 - `OTHER`
 
+## Transfer Price
+
+The backend prices every line and the branch is invoiced the transfer value:
+
+```text
+landed cost (from the batch)
++ our margin (landed cost x company markup percent)
++ distribution expenses allocated per kg
+= transfer price per kg
+```
+
+The branch selling price is not part of a distribution; it is applied when the branch records its sales.
+
 ## Rules
 
 - Dispatch cannot exceed available stock.
+- The branch selling price is not entered on a distribution.
 - FIFO may split one item across multiple batches.
 - Branch receipt discrepancy requires a reason.
 - Dispatch and receipt can be idempotent.

@@ -8,7 +8,7 @@ public record SalesReportRow(
 		LocalDate saleDate,
 		String branchName,
 		BigDecimal totalSales,
-		BigDecimal costAmount,
-		BigDecimal profit,
+		BigDecimal transferValue,
+		BigDecimal branchProfit,
 		BigDecimal profitPercent) {
 }

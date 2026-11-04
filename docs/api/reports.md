@@ -28,10 +28,10 @@ Example response:
     "stockWeightKg": "4200.500",
     "stockValue": "3900000.00",
     "distributionWeightKg": "1800.000",
-    "distributionRevenue": "1620000.00",
+    "distributionTransferValue": "1620000.00",
+    "ourMargin": "97000.00",
     "totalSales": "1500000.00",
-    "salesCost": "1180000.00",
-    "profit": "320000.00",
+    "branchProfit": "320000.00",
     "branchOutstanding": "450000.00",
     "shrinkageWeightKg": "12.500"
   },
@@ -76,7 +76,7 @@ Totals: `receivedWeightKg`, `remainingWeightKg`, `stockValue`.
 GET /api/v1/reports/distribution?branchId=...&from=2026-01-01&to=2026-01-31
 ```
 
-Totals: `weightKg`, `cost`, `revenue`, `margin`, `expenseAmount`.
+Totals: `weightKg`, `cost` (landed), `transferValue`, `ourMargin`, `expenseAmount`.
 
 ### Sales
 
@@ -84,7 +84,7 @@ Totals: `weightKg`, `cost`, `revenue`, `margin`, `expenseAmount`.
 GET /api/v1/reports/sales?branchId=...&from=2026-01-01&to=2026-01-31
 ```
 
-Totals: `totalSales`, `costAmount`, `profit`, `profitPercent`.
+Totals: `totalSales`, `transferValue`, `branchProfit`, `profitPercent`.
 
 ### Profit
 
@@ -92,8 +92,8 @@ Totals: `totalSales`, `costAmount`, `profit`, `profitPercent`.
 GET /api/v1/reports/profit?branchId=...&from=2026-01-01&to=2026-01-31
 ```
 
-Rows are grouped per branch and are based on the total sales the branch entered.
-Totals: `saleCount`, `totalSales`, `costAmount`, `profit`, `profitPercent`.
+Rows are grouped per branch and are based on the sales the branch entered.
+Totals: `saleCount`, `totalSales`, `transferValue`, `branchProfit`, `profitPercent`.
 
 ### Shrinkage
 

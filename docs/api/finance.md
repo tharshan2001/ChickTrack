@@ -31,12 +31,12 @@ Settlements settle the daily sales the branch entered. Each allocation points at
 GET /api/v1/branches/{id}/balance
 ```
 
-Returns `outstandingAmount`, which is total entered sales minus posted settlements.
+Returns `outstandingAmount`, which is the transfer value of entered sales minus posted settlements.
 
 ## Rules
 
 - Allocations must sum to the settlement amount.
-- An allocation cannot exceed the outstanding amount of the branch sale it settles.
+- An allocation cannot exceed the transfer value of the branch sale it settles.
 - The branch sale must belong to the settlement's branch.
 - Posted settlements are immutable and can only be reversed.
 - Reversals restore balances.

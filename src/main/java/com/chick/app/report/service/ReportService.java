@@ -205,8 +205,8 @@ public class ReportService {
 		List<DistributionReportRow> rows = new ArrayList<>();
 		BigDecimal weight = BigDecimal.ZERO;
 		BigDecimal cost = BigDecimal.ZERO;
-		BigDecimal revenue = BigDecimal.ZERO;
-		BigDecimal margin = BigDecimal.ZERO;
+		BigDecimal transferValue = BigDecimal.ZERO;
+		BigDecimal ourMargin = BigDecimal.ZERO;
 		BigDecimal expenses = BigDecimal.ZERO;
 
 		for (Distribution distribution : distributions.findAll(specification)) {
@@ -220,21 +220,21 @@ public class ReportService {
 					distribution.getStatus().name(),
 					distribution.getTotalWeightKg(),
 					distribution.getTotalCost(),
-					distribution.getTotalRevenue(),
-					distribution.getTotalMargin(),
+					distribution.getTotalTransferValue(),
+					distribution.getTotalOurMargin(),
 					distribution.getExpenseAmount()));
 			weight = weight.add(distribution.getTotalWeightKg());
 			cost = cost.add(distribution.getTotalCost());
-			revenue = revenue.add(distribution.getTotalRevenue());
-			margin = margin.add(distribution.getTotalMargin());
+			transferValue = transferValue.add(distribution.getTotalTransferValue());
+			ourMargin = ourMargin.add(distribution.getTotalOurMargin());
 			expenses = expenses.add(distribution.getExpenseAmount());
 		}
 
 		Map<String, BigDecimal> totals = new LinkedHashMap<>();
 		totals.put("weightKg", weight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP));
 		totals.put("cost", cost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("revenue", revenue.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("margin", margin.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("transferValue", transferValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("ourMargin", ourMargin.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		totals.put("expenseAmount", expenses.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 
 		return new ReportResult<>("distribution", rows, totals);
@@ -269,34 +269,34 @@ public class ReportService {
 					id -> new BranchSalesTotals(sale.getBranch().getName()));
 			branchTotals.count++;
 			branchTotals.totalSales = branchTotals.totalSales.add(sale.getTotalSales());
-			branchTotals.cost = branchTotals.cost.add(sale.getCostAmount());
+			branchTotals.transferValue = branchTotals.transferValue.add(sale.getTransferValue());
 		}
 
 		List<ProfitReportRow> rows = new ArrayList<>();
 		BigDecimal totalSales = BigDecimal.ZERO;
-		BigDecimal totalCost = BigDecimal.ZERO;
+		BigDecimal totalTransferValue = BigDecimal.ZERO;
 		int totalCount = 0;
 
 		for (BranchSalesTotals branchTotals : byBranch.values()) {
-			BigDecimal profit = branchTotals.totalSales.subtract(branchTotals.cost);
+			BigDecimal profit = branchTotals.totalSales.subtract(branchTotals.transferValue);
 			rows.add(new ProfitReportRow(
 					branchTotals.branchName,
 					branchTotals.count,
 					branchTotals.totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-					branchTotals.cost.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+					branchTotals.transferValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 					profit.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 					percent(profit, branchTotals.totalSales)));
 			totalCount += branchTotals.count;
 			totalSales = totalSales.add(branchTotals.totalSales);
-			totalCost = totalCost.add(branchTotals.cost);
+			totalTransferValue = totalTransferValue.add(branchTotals.transferValue);
 		}
 
-		BigDecimal totalProfit = totalSales.subtract(totalCost);
+		BigDecimal totalProfit = totalSales.subtract(totalTransferValue);
 		Map<String, BigDecimal> totals = new LinkedHashMap<>();
 		totals.put("saleCount", BigDecimal.valueOf(totalCount));
 		totals.put("totalSales", totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("costAmount", totalCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("profit", totalProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("transferValue", totalTransferValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("branchProfit", totalProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		totals.put("profitPercent", percent(totalProfit, totalSales));
 
 		return new ReportResult<>("profit", rows, totals);
@@ -335,18 +335,18 @@ public class ReportService {
 					sale.getSaleDate(),
 					sale.getBranch().getName(),
 					sale.getTotalSales(),
-					sale.getCostAmount(),
-					sale.getProfit(),
-					percent(sale.getProfit(), sale.getTotalSales())));
+					sale.getTransferValue(),
+					sale.getBranchProfit(),
+					percent(sale.getBranchProfit(), sale.getTotalSales())));
 			totalSales = totalSales.add(sale.getTotalSales());
-			totalCost = totalCost.add(sale.getCostAmount());
-			totalProfit = totalProfit.add(sale.getProfit());
+			totalCost = totalCost.add(sale.getTransferValue());
+			totalProfit = totalProfit.add(sale.getBranchProfit());
 		}
 
 		Map<String, BigDecimal> totals = new LinkedHashMap<>();
 		totals.put("totalSales", totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("costAmount", totalCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		totals.put("profit", totalProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("transferValue", totalCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("branchProfit", totalProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		totals.put("profitPercent", percent(totalProfit, totalSales));
 
 		return new ReportResult<>("sales", rows, totals);
@@ -468,7 +468,7 @@ public class ReportService {
 		final String branchName;
 		int count;
 		BigDecimal totalSales = BigDecimal.ZERO;
-		BigDecimal cost = BigDecimal.ZERO;
+		BigDecimal transferValue = BigDecimal.ZERO;
 
 		BranchSalesTotals(String branchName) {
 			this.branchName = branchName;

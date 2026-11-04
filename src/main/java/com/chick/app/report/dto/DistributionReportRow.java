@@ -10,7 +10,7 @@ public record DistributionReportRow(
 		String status,
 		BigDecimal weightKg,
 		BigDecimal cost,
-		BigDecimal revenue,
-		BigDecimal margin,
+		BigDecimal transferValue,
+		BigDecimal ourMargin,
 		BigDecimal expenseAmount) {
 }

@@ -39,15 +39,18 @@ public class DistributionItem extends BaseEntity {
 	@Column(name = "unit_cost", nullable = false, precision = 14, scale = 4)
 	private BigDecimal unitCost;
 
-	@Column(name = "unit_price", nullable = false, precision = 14, scale = 4)
-	private BigDecimal unitPrice;
+	@Column(name = "our_margin_per_kg", nullable = false, precision = 14, scale = 4)
+	private BigDecimal ourMarginPerKg = BigDecimal.ZERO;
+
+	@Column(name = "distribution_expense_per_kg", nullable = false, precision = 14, scale = 4)
+	private BigDecimal distributionExpensePerKg = BigDecimal.ZERO;
+
+	@Column(name = "transfer_price_per_kg", nullable = false, precision = 14, scale = 4)
+	private BigDecimal transferPricePerKg = BigDecimal.ZERO;
 
 	@Column(name = "line_cost", nullable = false, precision = 16, scale = 2)
 	private BigDecimal lineCost;
 
-	@Column(name = "line_revenue", nullable = false, precision = 16, scale = 2)
-	private BigDecimal lineRevenue;
-
-	@Column(name = "line_margin", nullable = false, precision = 16, scale = 2)
-	private BigDecimal lineMargin;
+	@Column(name = "line_transfer_value", nullable = false, precision = 16, scale = 2)
+	private BigDecimal lineTransferValue = BigDecimal.ZERO;
 }

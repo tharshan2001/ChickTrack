@@ -84,6 +84,7 @@ Errors use the standard format described in [Errors](errors.md).
 | OIDC | `/.well-known/*`, `/userinfo` | Implemented |
 | Master data | `/api/v1/*` | Planned |
 | Pricing | `/api/v1/daily-prices` | Planned |
+| Company margins | `/api/v1/company-margin-rules` | Implemented |
 | Procurement | `/api/v1/procurements` | Planned |
 | Inventory | `/api/v1/stock-batches` | Planned |
 | Distribution | `/api/v1/distributions` | Planned |

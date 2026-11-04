@@ -22,8 +22,9 @@ Cards:
 - Procurement value and weight for the selected range.
 - Current stock weight.
 - Stock value.
-- Distribution weight and revenue for the selected range.
-- Total sales, sales cost, and profit for the selected range.
+- Distribution weight and transfer value for the selected range.
+- Our margin for the selected range.
+- Total sales and branch profit for the selected range.
 - Branch outstanding balance.
 - Shrinkage and loss.
 
@@ -37,7 +38,7 @@ Implemented:
 - Stock by batch report.
 - Distribution report.
 - Branch sales report.
-- Profit and loss report by branch (based on entered branch sales).
+- Profit and loss report by branch (branch sales minus transfer value).
 - Shrinkage and loss report.
 - Branch settlements report.
 

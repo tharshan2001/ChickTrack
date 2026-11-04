@@ -11,10 +11,10 @@ public record DashboardResponse(
 		BigDecimal stockWeightKg,
 		BigDecimal stockValue,
 		BigDecimal distributionWeightKg,
-		BigDecimal distributionRevenue,
+		BigDecimal distributionTransferValue,
+		BigDecimal ourMargin,
 		BigDecimal totalSales,
-		BigDecimal salesCost,
-		BigDecimal profit,
+		BigDecimal branchProfit,
 		BigDecimal branchOutstanding,
 		BigDecimal shrinkageWeightKg) {
 }

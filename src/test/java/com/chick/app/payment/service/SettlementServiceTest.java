@@ -59,9 +59,9 @@ class SettlementServiceTest {
 		sale.setId(UUID.randomUUID());
 		sale.setBranch(branch);
 		sale.setSaleDate(LocalDate.of(2026, 1, 15));
-		sale.setTotalSales(new BigDecimal("400000.00"));
-		sale.setCostAmount(new BigDecimal("340528.80"));
-		sale.setProfit(new BigDecimal("59471.20"));
+		sale.setTotalSales(new BigDecimal("410000.00"));
+		sale.setTransferValue(new BigDecimal("340528.80"));
+		sale.setBranchProfit(new BigDecimal("69471.20"));
 
 		when(branches.findById(branch.getId())).thenReturn(Optional.of(branch));
 		when(branchSales.findById(sale.getId())).thenReturn(Optional.of(sale));
@@ -83,7 +83,7 @@ class SettlementServiceTest {
 
 		BalanceResponse balance = service.branchBalance(branch.getId());
 
-		assertThat(balance.outstandingAmount()).isEqualByComparingTo("250000.00");
+		assertThat(balance.outstandingAmount()).isEqualByComparingTo("190528.80");
 	}
 
 	@Test
@@ -93,11 +93,11 @@ class SettlementServiceTest {
 		assertThatThrownBy(() -> service.create(new BranchSettlementCreateRequest(
 				branch.getId(),
 				LocalDate.of(2026, 1, 20),
-				new BigDecimal("450000.00"),
+				new BigDecimal("350000.00"),
 				"CASH",
 				"REF-1",
 				null,
-				List.of(new BranchSettlementAllocationRequest(sale.getId(), new BigDecimal("450000.00"))))))
+				List.of(new BranchSettlementAllocationRequest(sale.getId(), new BigDecimal("350000.00"))))))
 				.isInstanceOf(BusinessException.class)
 				.hasMessageContaining("outstanding");
 	}

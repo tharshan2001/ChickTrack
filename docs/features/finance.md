@@ -16,12 +16,12 @@ Track the money a branch pays back for the sales it entered, so outstanding bran
 ## Rules
 
 - Settlements are allocated against the daily branch sales they pay for.
-- An allocation cannot exceed the outstanding amount of that branch sale.
+- An allocation cannot exceed the transfer value of that branch sale (what the branch owes us).
 - Allocations must sum to the settlement amount.
 - The branch sale must belong to the settlement's branch.
 - Settlements are immutable once posted; corrections use reversal records.
 - Overpayment is rejected.
-- Balances are calculated from posted allocations: entered sales minus posted settlements.
+- Balances are calculated from posted allocations: transfer value of entered sales minus posted settlements.
 
 ## Branch Settlements
 

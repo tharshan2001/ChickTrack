@@ -47,11 +47,11 @@ public class Distribution extends BaseEntity {
 	@Column(name = "total_cost", precision = 16, scale = 2)
 	private BigDecimal totalCost = BigDecimal.ZERO;
 
-	@Column(name = "total_revenue", precision = 16, scale = 2)
-	private BigDecimal totalRevenue = BigDecimal.ZERO;
+	@Column(name = "total_transfer_value", precision = 16, scale = 2)
+	private BigDecimal totalTransferValue = BigDecimal.ZERO;
 
-	@Column(name = "total_margin", precision = 16, scale = 2)
-	private BigDecimal totalMargin = BigDecimal.ZERO;
+	@Column(name = "total_our_margin", precision = 16, scale = 2)
+	private BigDecimal totalOurMargin = BigDecimal.ZERO;
 
 	@Column(name = "expense_amount", precision = 16, scale = 2)
 	private BigDecimal expenseAmount = BigDecimal.ZERO;

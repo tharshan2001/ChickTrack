@@ -7,6 +7,5 @@ import java.util.UUID;
 
 public record DistributionItemRequest(
 		@NotNull UUID chickenTypeId,
-		@NotNull @DecimalMin("0.001") BigDecimal weightKg,
-		@NotNull @DecimalMin("0.0000") BigDecimal sellingPricePerKg) {
+		@NotNull @DecimalMin("0.001") BigDecimal weightKg) {
 }

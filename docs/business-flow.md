@@ -24,22 +24,40 @@ Login (OAuth2 PKCE)
    |
 Master data (branches, suppliers, chicken types, expense categories)
    |
-Daily prices (purchase + branch selling price, effective dated)
+Prices (branch selling price per chicken type + our margin rule)
    |
-Procurement (supplier bill + commission + expenses)  --> stock batch created automatically
+Procurement (purchase price + commission + expenses)  --> stock batch created automatically
    |
 Warehouse stock (batches, remaining weight, FIFO)
    |
-Distribution to branch (dispatch, branch-set price snapshotted)
+Distribution to branch (transfer price = landed cost + our margin + expenses)
    |
 Branch receiving (weight confirmed, discrepancy recorded as loss)
    |
-Branch daily sales (one total per branch per day)  --> profit marked
+Branch sales (weight sold per chicken type, branch price)  --> branch profit marked
    |
-Branch settlement (branch pays for entered sales)
+Branch settlement (branch pays the transfer value)
    |
 Dashboard and reports (CSV / PDF export)
 ```
+
+### The price ladder (per kg)
+
+```
+purchase price (typed at purchase)          P
++ commission                                 C
++ allocated procurement expenses             E
+= landed cost (warehouse)                    L
++ our margin (L x markup %)                  M
++ allocated distribution expenses            D
+= transfer price (branch pays us)            T
++ branch margin                              S - T
+= branch selling price (we set per branch)   S
+```
+
+- Our profit per kg = `M` (distribution expenses are passed through in `T`).
+- Branch profit per kg = `S - T`.
+- What the branch owes = `T x weight` (the transfer value).
 
 ## 3. Step-by-Step Business Logic
 
@@ -64,6 +82,13 @@ Dashboard and reports (CSV / PDF export)
 - A daily price row stores the purchase price per kg, the selling price per kg, and an `effectiveFrom` instant.
 - A price can be global, per branch (the branch-set selling price), or per supplier.
 - Prices are effective dated: saved transactions snapshot the price they used, so later price changes never rewrite history.
+- The branch selling price in this list is the price applied when the branch records its sales.
+
+### 3.3b Company Margin Rules
+
+- A rule sets our markup percentage for a chicken type, optionally scoped to a branch, effective from a point in time.
+- The rule applied to a dispatch is the newest one effective on or before the distribution date, preferring a branch-specific rule.
+- Our margin per kg = `landed cost x markup percent`. Without a rule the margin is zero.
 
 ### 3.4 Procurement (no approval, no receiving step, no reversal)
 
@@ -136,8 +161,8 @@ The branch does not report quantities or chicken types and no FIFO costing happe
 
 ### 3.10 Dashboard and Reports
 
-- Dashboard cards: procurement value and weight, stock weight and value, distribution weight and revenue, total sales, sales cost, profit, branch outstanding, shrinkage.
-- Reports: procurement, stock by batch, distribution, sales, profit by branch, shrinkage, settlements.
+- Dashboard cards: procurement value and weight, stock weight and value, distribution weight and transfer value, our margin, total sales, branch profit, branch outstanding, shrinkage.
+- Reports: procurement, stock by batch, distribution (transfer value and our margin), sales (revenue, transfer value, branch profit), profit by branch, shrinkage, settlements.
 - Reports read posted data only: draft and reversed procurements and distributions are excluded, reversed settlements are excluded.
 - Exports are generated server-side in CSV or PDF from the same rows and totals the API returns.
 
@@ -162,7 +187,9 @@ The branch does not report quantities or chicken types and no FIFO costing happe
 | `RESOURCE_NOT_FOUND` | Unknown id in the request |
 | `BUSINESS_RULE_VIOLATION` | Rule breach, e.g. allocations not summing to the amount |
 | `INSUFFICIENT_STOCK` | Not enough warehouse stock for a distribution |
-| `OVER_ALLOCATION` | Settlement allocation above the sale outstanding |
+| `OVER_ALLOCATION` | Settlement allocation above the sale transfer value |
+| `INSUFFICIENT_BRANCH_STOCK` | Branch sold more than it received |
+| `PRICE_NOT_CONFIGURED` | No branch selling price for the chicken type and date |
 | `INVALID_STATUS_TRANSITION` | Action not allowed in the current status |
 | `FORBIDDEN` | Branch outside the authenticated user's scope |
 | `REPORT_NOT_FOUND` | Unknown report name in an export request |
@@ -177,10 +204,11 @@ The branch does not report quantities or chicken types and no FIFO costing happe
 | Foundation | `audit_logs`, `document_sequences`, `sync_requests` |
 | Reference | `suppliers`, `chicken_types`, `expense_categories` |
 | Pricing | `daily_prices` |
+| Margins | `company_margin_rules` |
 | Procurement | `procurements`, `procurement_items`, `procurement_expenses`, `procurement_receipts`, `procurement_receipt_items` |
 | Inventory | `stock_batches`, `inventory_movements` |
 | Distribution | `distributions`, `distribution_items`, `distribution_expenses`, `expense_allocations`, `branch_receipts`, `branch_receipt_items` |
-| Sales | `branch_sales` |
+| Sales | `branch_sales`, `branch_sale_items` |
 | Finance | `branch_settlements`, `branch_settlement_allocations` |
 
 ## 7. Not Yet Implemented

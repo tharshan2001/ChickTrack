@@ -84,8 +84,9 @@ public class DashboardService {
 		}
 
 		BigDecimal distributionWeight = BigDecimal.ZERO;
-		BigDecimal distributionRevenue = BigDecimal.ZERO;
-		BigDecimal outstandingRevenue = BigDecimal.ZERO;
+		BigDecimal distributionTransferValue = BigDecimal.ZERO;
+		BigDecimal ourMargin = BigDecimal.ZERO;
+		BigDecimal outstandingTransferValue = BigDecimal.ZERO;
 		BigDecimal outstandingSettled = BigDecimal.ZERO;
 
 		Specification<Distribution> distributionSpec = (root, query, cb) -> cb.and(
@@ -101,7 +102,8 @@ public class DashboardService {
 				continue;
 			}
 			distributionWeight = distributionWeight.add(distribution.getTotalWeightKg());
-			distributionRevenue = distributionRevenue.add(distribution.getTotalRevenue());
+			distributionTransferValue = distributionTransferValue.add(distribution.getTotalTransferValue());
+			ourMargin = ourMargin.add(distribution.getTotalOurMargin());
 		}
 
 		Specification<BranchSale> allSalesSpec = (root, query, cb) -> cb.conjunction();
@@ -110,7 +112,7 @@ public class DashboardService {
 		}
 		for (BranchSale sale : branchSales.findAll(allSalesSpec)) {
 			if (scope.allows(sale.getBranch().getId())) {
-				outstandingRevenue = outstandingRevenue.add(sale.getTotalSales());
+				outstandingTransferValue = outstandingTransferValue.add(sale.getTransferValue());
 			}
 		}
 
@@ -126,7 +128,7 @@ public class DashboardService {
 		}
 
 		BigDecimal totalSales = BigDecimal.ZERO;
-		BigDecimal salesCost = BigDecimal.ZERO;
+		BigDecimal salesTransferValue = BigDecimal.ZERO;
 		Specification<BranchSale> salesSpec = (root, query, cb) -> cb.and(
 				cb.greaterThanOrEqualTo(root.get("saleDate"), effectiveFrom),
 				cb.lessThanOrEqualTo(root.get("saleDate"), effectiveTo));
@@ -138,9 +140,9 @@ public class DashboardService {
 				continue;
 			}
 			totalSales = totalSales.add(sale.getTotalSales());
-			salesCost = salesCost.add(sale.getCostAmount());
+			salesTransferValue = salesTransferValue.add(sale.getTransferValue());
 		}
-		BigDecimal profit = totalSales.subtract(salesCost);
+		BigDecimal branchProfit = totalSales.subtract(salesTransferValue);
 
 		Instant shrinkageStart = effectiveFrom.atStartOfDay(ZoneOffset.UTC).toInstant();
 		Instant shrinkageEnd = effectiveTo.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
@@ -169,11 +171,11 @@ public class DashboardService {
 				stockWeight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP),
 				stockValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 				distributionWeight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP),
-				distributionRevenue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+				distributionTransferValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+				ourMargin.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 				totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-				salesCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-				profit.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
-				outstandingRevenue.subtract(outstandingSettled).setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+				branchProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP),
+				outstandingTransferValue.subtract(outstandingSettled).setScale(MONEY_SCALE, RoundingMode.HALF_UP),
 				shrinkageWeight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP));
 	}
 }

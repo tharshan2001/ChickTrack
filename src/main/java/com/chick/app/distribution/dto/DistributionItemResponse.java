@@ -9,8 +9,9 @@ public record DistributionItemResponse(
 		UUID chickenTypeId,
 		BigDecimal weightKg,
 		BigDecimal unitCost,
-		BigDecimal unitPrice,
+		BigDecimal ourMarginPerKg,
+		BigDecimal distributionExpensePerKg,
+		BigDecimal transferPricePerKg,
 		BigDecimal lineCost,
-		BigDecimal lineRevenue,
-		BigDecimal lineMargin) {
+		BigDecimal lineTransferValue) {
 }

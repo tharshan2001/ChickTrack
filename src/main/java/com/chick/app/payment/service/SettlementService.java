@@ -121,9 +121,9 @@ public class SettlementService {
 		branches.findById(branchId)
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
 
-		BigDecimal totalSales = branchSales.findAll((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId))
+		BigDecimal transferValue = branchSales.findAll((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId))
 				.stream()
-				.map(BranchSale::getTotalSales)
+				.map(BranchSale::getTransferValue)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
 
 		BigDecimal settled = settlements.findAll((root, query, cb) -> cb.and(
@@ -134,7 +134,7 @@ public class SettlementService {
 				.map(BranchSettlementAllocation::getAmount)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
 
-		return new BalanceResponse(totalSales.subtract(settled).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		return new BalanceResponse(transferValue.subtract(settled).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 	}
 
 	private BranchSettlement find(UUID id) {
@@ -150,6 +150,6 @@ public class SettlementService {
 						&& allocation.getBranchSale().getId().equals(sale.getId()))
 				.map(BranchSettlementAllocation::getAmount)
 				.reduce(BigDecimal.ZERO, BigDecimal::add);
-		return sale.getTotalSales().subtract(settled);
+		return sale.getTransferValue().subtract(settled);
 	}
 }

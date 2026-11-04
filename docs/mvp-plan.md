@@ -4,7 +4,7 @@
 
 Deliver a deployable backend that supports one pilot branch end-to-end:
 
-**OAuth2 login -> master data -> daily price -> procurement -> stock batch -> FIFO distribution -> branch receiving -> branch daily sales -> profit -> settlement -> report.**
+**OAuth2 login -> master data -> daily price -> company margin rule -> procurement -> stock batch -> FIFO distribution -> transfer price -> branch receiving -> branch sales -> branch profit -> settlement -> report.**
 
 The mobile app is deferred.
 
@@ -23,7 +23,8 @@ The mobile app is deferred.
 - FIFO allocation with audited override.
 - Distribution, dispatch, branch receiving, discrepancy reasons.
 - Reversal documents for posted records.
-- Branch daily sales entry and profit marking.
+- Company margin rules and transfer pricing.
+- Branch sales entry per chicken type and branch profit marking.
 - Basic branch settlements.
 - Outstanding branch balances.
 - Dashboard and core reports with CSV/PDF exports.

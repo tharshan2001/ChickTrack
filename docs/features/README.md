@@ -9,6 +9,7 @@ The end-to-end business logic and flow is documented in [Business Flow](../busin
 | Authentication and OAuth2 | Implemented foundation | [authentication.md](authentication.md) |
 | Identity and master data | In progress | [master-data.md](master-data.md) |
 | Daily prices | Planned | [pricing.md](pricing.md) |
+| Company margin rules | Implemented | [margin-rules.md](margin-rules.md) |
 | Procurement and receiving | Planned | [procurement.md](procurement.md) |
 | Inventory and batches | Planned | [inventory.md](inventory.md) |
 | Distribution and branch receiving | Planned | [distribution.md](distribution.md) |

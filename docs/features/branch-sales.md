@@ -6,7 +6,7 @@ Implemented.
 
 ## Purpose
 
-Capture what a branch actually sold so profit and loss can be marked without FIFO costing at the branch.
+Capture what a branch actually sold, at the selling price we set for that branch, and mark branch profit against the transfer price.
 
 ## Actors
 
@@ -27,6 +27,7 @@ Capture what a branch actually sold so profit and loss can be marked without FIF
 ## Data
 
 - `branch_sales`
+- `branch_sale_items`
 
 ## API
 
@@ -40,6 +41,7 @@ See [Branch Sales API](../api/branch-sales.md).
 
 ## Acceptance Criteria
 
-- One sales figure per branch per day.
-- Profit equals total sales minus the cost of stock received that day.
-- Re-recording a day updates the figure instead of duplicating it.
+- One sales entry per branch per day, with one line per chicken type.
+- Branch profit equals sales revenue minus transfer value.
+- Selling more than the branch holds is rejected.
+- Re-recording a day updates the entry instead of duplicating it.

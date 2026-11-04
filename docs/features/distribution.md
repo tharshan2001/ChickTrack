@@ -20,7 +20,7 @@ Move stock to branches, record delivery, and capture discrepancies.
 1. Create a distribution for a branch.
 2. Add chicken types and requested weights.
 3. Backend allocates stock using FIFO.
-4. Selling prices are resolved and snapshotted.
+4. The transfer price is computed per line (landed cost + our margin + allocated distribution expenses).
 5. Distribution is dispatched.
 6. Branch receives the delivery.
 7. Branch records received weight and discrepancy reasons.
@@ -31,7 +31,8 @@ Move stock to branches, record delivery, and capture discrepancies.
 
 - Distribution cannot exceed available stock.
 - A distribution line may split across multiple batches.
-- Each line stores the allocated batch cost and selling price.
+- Each line stores the allocated batch landed cost, our margin per kg, allocated distribution expense per kg, and the resulting transfer price.
+- The branch selling price is not part of a distribution; it is applied when the branch records sales.
 - Branch receiving requires a reason for any discrepancy.
 - Missing or damaged stock is tracked separately.
 - Dispatch and receiving actions are audited.

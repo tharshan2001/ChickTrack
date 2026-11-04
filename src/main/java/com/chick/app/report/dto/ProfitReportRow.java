@@ -6,7 +6,7 @@ public record ProfitReportRow(
 		String branchName,
 		int saleCount,
 		BigDecimal totalSales,
-		BigDecimal costAmount,
-		BigDecimal profit,
+		BigDecimal transferValue,
+		BigDecimal branchProfit,
 		BigDecimal profitPercent) {
 }

@@ -30,15 +30,19 @@ import com.chick.app.inventory.domain.InventoryMovement;
 import com.chick.app.inventory.domain.StockBatch;
 import com.chick.app.inventory.repository.InventoryMovementRepository;
 import com.chick.app.inventory.repository.StockBatchRepository;
+import com.chick.app.margin.service.CompanyMarginRuleService;
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.exception.ResourceNotFoundException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -64,6 +68,7 @@ public class DistributionService {
 	private final BranchReceiptRepository branchReceipts;
 	private final ExpenseAllocationRepository expenseAllocations;
 	private final DocumentNumberService documentNumbers;
+	private final CompanyMarginRuleService marginRules;
 
 	public DistributionService(
 			DistributionRepository distributions,
@@ -75,7 +80,8 @@ public class DistributionService {
 			InventoryMovementRepository movements,
 			BranchReceiptRepository branchReceipts,
 			ExpenseAllocationRepository expenseAllocations,
-			DocumentNumberService documentNumbers) {
+			DocumentNumberService documentNumbers,
+			CompanyMarginRuleService marginRules) {
 		this.distributions = distributions;
 		this.mapper = mapper;
 		this.branches = branches;
@@ -86,6 +92,7 @@ public class DistributionService {
 		this.branchReceipts = branchReceipts;
 		this.expenseAllocations = expenseAllocations;
 		this.documentNumbers = documentNumbers;
+		this.marginRules = marginRules;
 	}
 
 	@Transactional(readOnly = true)
@@ -165,10 +172,20 @@ public class DistributionService {
 			item.setChickenType(allocation.chickenType);
 			item.setWeightKg(allocation.weight);
 			item.setUnitCost(batch.getLandedCostPerKg());
-			item.setUnitPrice(allocation.request.sellingPricePerKg().setScale(COST_SCALE, RoundingMode.HALF_UP));
+			BigDecimal markupPercent = marginRules.markupPercent(
+					allocation.chickenType.getId(),
+					branch.getId(),
+					endOfDay(request.distributionDate()));
+			BigDecimal ourMarginPerKg = batch.getLandedCostPerKg()
+					.multiply(markupPercent)
+					.divide(BigDecimal.valueOf(100), COST_SCALE, RoundingMode.HALF_UP);
+			item.setOurMarginPerKg(ourMarginPerKg);
+			item.setDistributionExpensePerKg(BigDecimal.ZERO.setScale(COST_SCALE));
+			item.setTransferPricePerKg(batch.getLandedCostPerKg().add(ourMarginPerKg));
 			item.setLineCost(item.getWeightKg().multiply(item.getUnitCost()).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-			item.setLineRevenue(item.getWeightKg().multiply(item.getUnitPrice()).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-			item.setLineMargin(item.getLineRevenue().subtract(item.getLineCost()));
+			item.setLineTransferValue(item.getWeightKg()
+					.multiply(item.getTransferPricePerKg())
+					.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 			distribution.getItems().add(item);
 		}
 
@@ -190,9 +207,9 @@ public class DistributionService {
 			}
 		}
 
-		recalculate(distribution);
 		distributions.save(distribution);
 		allocateExpenses(distribution);
+		recalculate(distribution);
 		distributions.save(distribution);
 		return toResponse(distribution);
 	}
@@ -312,6 +329,10 @@ public class DistributionService {
 				"Distribution cannot be reversed in its current status", HttpStatus.CONFLICT);
 	}
 
+	private Instant endOfDay(LocalDate date) {
+		return date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().minusNanos(1);
+	}
+
 	private Distribution find(UUID id) {
 		return distributions.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Distribution", id));
@@ -320,22 +341,28 @@ public class DistributionService {
 	private void recalculate(Distribution distribution) {
 		BigDecimal totalWeight = BigDecimal.ZERO;
 		BigDecimal totalCost = BigDecimal.ZERO;
-		BigDecimal totalRevenue = BigDecimal.ZERO;
+		BigDecimal totalTransferValue = BigDecimal.ZERO;
+		BigDecimal totalOurMargin = BigDecimal.ZERO;
 		for (DistributionItem item : distribution.getItems()) {
 			item.setLineCost(item.getWeightKg().multiply(item.getUnitCost()).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-			item.setLineRevenue(item.getWeightKg().multiply(item.getUnitPrice()).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-			item.setLineMargin(item.getLineRevenue().subtract(item.getLineCost()));
+			item.setLineTransferValue(item.getWeightKg()
+					.multiply(item.getTransferPricePerKg())
+					.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 			totalWeight = totalWeight.add(item.getWeightKg());
 			totalCost = totalCost.add(item.getLineCost());
-			totalRevenue = totalRevenue.add(item.getLineRevenue());
+			totalTransferValue = totalTransferValue.add(item.getLineTransferValue());
+			totalOurMargin = totalOurMargin.add(item.getWeightKg()
+					.multiply(item.getOurMarginPerKg())
+					.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		}
 		distribution.setTotalWeightKg(totalWeight.setScale(WEIGHT_SCALE, RoundingMode.HALF_UP));
 		distribution.setTotalCost(totalCost);
-		distribution.setTotalRevenue(totalRevenue);
-		distribution.setTotalMargin(totalRevenue.subtract(totalCost));
+		distribution.setTotalTransferValue(totalTransferValue);
+		distribution.setTotalOurMargin(totalOurMargin);
 		distribution.setExpenseAmount(distribution.getExpenses().stream()
 				.map(DistributionExpense::getAmount)
-				.reduce(BigDecimal.ZERO, BigDecimal::add));
+				.reduce(BigDecimal.ZERO, BigDecimal::add)
+				.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 	}
 
 	private void allocateExpenses(Distribution distribution) {
@@ -348,8 +375,14 @@ public class DistributionService {
 		if (totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
 			return;
 		}
+
+		Map<DistributionItem, BigDecimal> allocatedPerItem = new IdentityHashMap<>();
+		for (DistributionItem item : distribution.getItems()) {
+			allocatedPerItem.put(item, BigDecimal.ZERO);
+		}
+
 		for (DistributionExpense expense : distribution.getExpenses()) {
-			if (expense.getAllocationMethod() != DistributionExpense.AllocationMethod.BY_WEIGHT) {
+			if (expense.getAllocationMethod() == DistributionExpense.AllocationMethod.MANUAL) {
 				continue;
 			}
 			BigDecimal allocated = BigDecimal.ZERO;
@@ -363,13 +396,25 @@ public class DistributionService {
 							.divide(totalWeight, MONEY_SCALE, RoundingMode.HALF_UP);
 					allocated = allocated.add(amount);
 				}
+				amount = amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 				ExpenseAllocation allocation = new ExpenseAllocation();
 				allocation.setDistributionExpense(expense);
 				allocation.setDistributionItem(item);
-				allocation.setAmount(amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+				allocation.setAmount(amount);
 				expenseAllocations.save(allocation);
-				// Need repository; instead store via cascade? ExpenseAllocation has no cascade from expense. We'll save through a repository.
+				allocatedPerItem.merge(item, amount, BigDecimal::add);
 			}
+		}
+
+		for (DistributionItem item : distribution.getItems()) {
+			BigDecimal allocated = allocatedPerItem.getOrDefault(item, BigDecimal.ZERO);
+			BigDecimal expensePerKg = item.getWeightKg().compareTo(BigDecimal.ZERO) == 0
+					? BigDecimal.ZERO.setScale(COST_SCALE)
+					: allocated.divide(item.getWeightKg(), COST_SCALE, RoundingMode.HALF_UP);
+			item.setDistributionExpensePerKg(expensePerKg);
+			item.setTransferPricePerKg(item.getUnitCost()
+					.add(item.getOurMarginPerKg())
+					.add(expensePerKg));
 		}
 	}
 

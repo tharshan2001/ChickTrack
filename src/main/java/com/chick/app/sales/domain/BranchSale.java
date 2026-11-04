@@ -2,14 +2,18 @@ package com.chick.app.sales.domain;
 
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.common.domain.BaseEntity;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -34,12 +38,15 @@ public class BranchSale extends BaseEntity {
 	@Column(name = "total_sales", nullable = false, precision = 16, scale = 2)
 	private BigDecimal totalSales = BigDecimal.ZERO;
 
-	@Column(name = "cost_amount", nullable = false, precision = 16, scale = 2)
-	private BigDecimal costAmount = BigDecimal.ZERO;
+	@Column(name = "transfer_value", nullable = false, precision = 16, scale = 2)
+	private BigDecimal transferValue = BigDecimal.ZERO;
 
-	@Column(nullable = false, precision = 16, scale = 2)
-	private BigDecimal profit = BigDecimal.ZERO;
+	@Column(name = "branch_profit", nullable = false, precision = 16, scale = 2)
+	private BigDecimal branchProfit = BigDecimal.ZERO;
 
 	@Column(columnDefinition = "text")
 	private String notes;
+
+	@OneToMany(mappedBy = "branchSale", cascade = CascadeType.ALL, orphanRemoval = true)
+	private List<BranchSaleItem> items = new ArrayList<>();
 }
