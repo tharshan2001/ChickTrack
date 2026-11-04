@@ -40,7 +40,21 @@ app.oauth.client.mobile.redirect-uri=${OAUTH_MOBILE_REDIRECT_URI:chicktrack://oa
 5. Client calls `/api/**` with the bearer access token.
 6. Client refreshes through `/oauth2/token` using the refresh token.
 
-Access tokens live for 15 minutes. Refresh tokens live for 30 days and are rotated.
+Access tokens live for 15 minutes. Refresh tokens live for 30 days and are rotated: every refresh returns a new refresh token and the old one stops working.
+
+The mobile client is a public client (no secret). Spring Authorization Server does not issue or accept refresh tokens for public clients by default, so ChickTrack adds two pieces in `security/`:
+
+- `RotatingRefreshTokenGenerator` issues refresh tokens to public clients on the authorization-code exchange (PKCE has already proven the caller).
+- `PublicClientRefreshAuthentication` accepts `grant_type=refresh_token` with only `client_id` for clients registered with `ClientAuthenticationMethod.NONE`; the single-use refresh token is the credential.
+
+Refresh request:
+
+```http
+POST /oauth2/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token&refresh_token=...&client_id=chicktrack-mobile
+```
 
 ## OAuth2 Endpoints
 

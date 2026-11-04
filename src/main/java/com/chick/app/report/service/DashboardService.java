@@ -18,6 +18,7 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
 import com.chick.app.common.time.BusinessTime;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -70,7 +71,8 @@ public class DashboardService {
 				root.get("status").in(ReportService.POSTED_PROCUREMENT_STATUSES),
 				cb.greaterThanOrEqualTo(root.get("procurementDate"), effectiveFrom),
 				cb.lessThanOrEqualTo(root.get("procurementDate"), effectiveTo));
-		for (Procurement procurement : procurements.findAll(procurementSpec)) {
+		// Procurement and warehouse stock belong to no branch: only users who see every branch get them.
+		for (Procurement procurement : scope.warehouseVisible() ? procurements.findAll(procurementSpec) : List.<Procurement>of()) {
 			procurementValue = procurementValue.add(procurement.getTotalCost());
 			procurementWeight = procurementWeight.add(procurement.getPaidWeightKg());
 		}
@@ -78,7 +80,9 @@ public class DashboardService {
 		Instant stockCutoff = effectiveTo.plusDays(1).atStartOfDay(BusinessTime.ZONE).toInstant();
 		BigDecimal stockWeight = BigDecimal.ZERO;
 		BigDecimal stockValue = BigDecimal.ZERO;
-		for (StockBatch batch : stockBatches.findAll((root, query, cb) -> cb.lessThan(root.get("receivedAt"), stockCutoff))) {
+		for (StockBatch batch : scope.warehouseVisible()
+				? stockBatches.findAll((root, query, cb) -> cb.lessThan(root.get("receivedAt"), stockCutoff))
+				: List.<StockBatch>of()) {
 			stockWeight = stockWeight.add(batch.getRemainingWeightKg());
 			stockValue = stockValue.add(batch.getRemainingWeightKg().multiply(batch.getLandedCostPerKg()));
 		}

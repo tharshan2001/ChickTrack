@@ -86,6 +86,7 @@ public class ReportService {
 	@Transactional(readOnly = true)
 	public ReportResult<ProcurementReportRow> procurement(LocalDate from, LocalDate to, UUID supplierId) {
 		validateRange(from, to);
+		boolean visible = scopeService.resolve(null).warehouseVisible();
 		Specification<Procurement> specification =
 				(root, query, cb) -> cb.and(root.get("status").in(POSTED_PROCUREMENT_STATUSES));
 		if (from != null) {
@@ -108,7 +109,8 @@ public class ReportService {
 		BigDecimal totalCost = BigDecimal.ZERO;
 		BigDecimal paidWeight = BigDecimal.ZERO;
 
-		for (Procurement procurement : procurements.findAll(specification)) {
+		// Procurement belongs to no branch: only users who see every branch get rows.
+		for (Procurement procurement : visible ? procurements.findAll(specification) : List.<Procurement>of()) {
 			rows.add(new ProcurementReportRow(
 					procurement.getReference(),
 					procurement.getProcurementDate(),
@@ -140,6 +142,7 @@ public class ReportService {
 
 	@Transactional(readOnly = true)
 	public ReportResult<StockReportRow> stock(UUID chickenTypeId, LocalDate asOf) {
+		boolean visible = scopeService.resolve(null).warehouseVisible();
 		LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now(BusinessTime.ZONE);
 		Instant endOfDay = effectiveAsOf.plusDays(1).atStartOfDay(BusinessTime.ZONE).toInstant();
 
@@ -155,7 +158,8 @@ public class ReportService {
 		BigDecimal remainingWeight = BigDecimal.ZERO;
 		BigDecimal stockValue = BigDecimal.ZERO;
 
-		for (StockBatch batch : stockBatches.findAll(specification)) {
+		// Warehouse stock belongs to no branch: only users who see every branch get rows.
+		for (StockBatch batch : visible ? stockBatches.findAll(specification) : List.<StockBatch>of()) {
 			LocalDate receivedDate = batch.getReceivedAt().atZone(BusinessTime.ZONE).toLocalDate();
 			BigDecimal value = batch.getRemainingWeightKg()
 					.multiply(batch.getLandedCostPerKg())

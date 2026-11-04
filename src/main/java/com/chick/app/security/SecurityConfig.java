@@ -49,13 +49,20 @@ public class SecurityConfig {
 
 	@Bean
 	@Order(1)
-	SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http) throws Exception {
+	SecurityFilterChain authorizationServerSecurityFilterChain(
+			HttpSecurity http,
+			RegisteredClientRepository registeredClients) throws Exception {
 		OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
 				new OAuth2AuthorizationServerConfigurer();
 		http
 				.securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
-				.with(authorizationServerConfigurer, (authorizationServer) ->
-						authorizationServer.oidc(Customizer.withDefaults()))
+				.with(authorizationServerConfigurer, (authorizationServer) -> authorizationServer
+						.oidc(Customizer.withDefaults())
+						.clientAuthentication(clientAuthentication -> clientAuthentication
+								.authenticationConverters(converters ->
+										converters.add(0, new PublicClientRefreshAuthentication.Converter()))
+								.authenticationProviders(providers ->
+										providers.add(0, new PublicClientRefreshAuthentication.Provider(registeredClients)))))
 				.authorizeHttpRequests((authorize) -> authorize.anyRequest().authenticated())
 				.exceptionHandling((exceptions) -> exceptions.defaultAuthenticationEntryPointFor(
 						new LoginUrlAuthenticationEntryPoint("/login"),
@@ -137,6 +144,20 @@ public class SecurityConfig {
 	@Bean
 	JwtDecoder jwtDecoder(JWKSource<SecurityContext> jwkSource) {
 		return OAuth2AuthorizationServerConfiguration.jwtDecoder(jwkSource);
+	}
+
+	@Bean
+	org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator<?> tokenGenerator(
+			JWKSource<SecurityContext> jwkSource,
+			OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer) {
+		org.springframework.security.oauth2.server.authorization.token.JwtGenerator jwtGenerator =
+				new org.springframework.security.oauth2.server.authorization.token.JwtGenerator(
+						new org.springframework.security.oauth2.jwt.NimbusJwtEncoder(jwkSource));
+		jwtGenerator.setJwtCustomizer(jwtTokenCustomizer);
+		return new org.springframework.security.oauth2.server.authorization.token.DelegatingOAuth2TokenGenerator(
+				jwtGenerator,
+				new org.springframework.security.oauth2.server.authorization.token.OAuth2AccessTokenGenerator(),
+				new RotatingRefreshTokenGenerator());
 	}
 
 	@Bean

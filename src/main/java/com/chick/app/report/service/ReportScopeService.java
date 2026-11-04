@@ -38,6 +38,11 @@ public class ReportScopeService {
 			return access.allows(branchId);
 		}
 
+		/** Warehouse-level figures (procurement, stock) belong to no branch; only all-branch users see them. */
+		public boolean warehouseVisible() {
+			return access.all();
+		}
+
 		public boolean restricted() {
 			return !access.all();
 		}
