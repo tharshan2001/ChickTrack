@@ -61,6 +61,9 @@ class BranchSaleServiceTest {
 	@Mock
 	private DocumentNumberService documentNumbers;
 
+	@Mock
+	private com.chick.app.identity.security.BranchAccessService branchAccess;
+
 	private BranchSaleService service;
 	private Branch branch;
 	private ChickenType chickenType;
@@ -69,7 +72,7 @@ class BranchSaleServiceTest {
 	void setUp() {
 		MockitoAnnotations.openMocks(this);
 		service = new BranchSaleService(sales, branches, chickenTypes, distributions, dailyPrices, mapper,
-				documentNumbers);
+				documentNumbers, branchAccess);
 
 		branch = new Branch();
 		branch.setId(UUID.randomUUID());
@@ -81,6 +84,7 @@ class BranchSaleServiceTest {
 		chickenType.setName("Broiler");
 
 		when(branches.findById(branch.getId())).thenReturn(Optional.of(branch));
+		when(branches.lockById(branch.getId())).thenReturn(Optional.of(branch));
 		when(chickenTypes.findById(chickenType.getId())).thenReturn(Optional.of(chickenType));
 		when(documentNumbers.next("BRANCH_SALE", "SALE")).thenReturn("SALE-2026-000001");
 		when(sales.save(any(BranchSale.class))).thenAnswer(invocation -> invocation.getArgument(0));

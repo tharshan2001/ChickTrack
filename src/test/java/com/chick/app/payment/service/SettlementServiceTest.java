@@ -41,6 +41,9 @@ class SettlementServiceTest {
 	@Mock
 	private BranchSaleRepository branchSales;
 
+	@Mock
+	private com.chick.app.identity.security.BranchAccessService branchAccess;
+
 	private SettlementService service;
 	private Branch branch;
 	private BranchSale sale;
@@ -48,7 +51,7 @@ class SettlementServiceTest {
 	@BeforeEach
 	void setUp() {
 		MockitoAnnotations.openMocks(this);
-		service = new SettlementService(settlements, mapper, branches, branchSales);
+		service = new SettlementService(settlements, mapper, branches, branchSales, branchAccess);
 
 		branch = new Branch();
 		branch.setId(UUID.randomUUID());
@@ -64,6 +67,7 @@ class SettlementServiceTest {
 		sale.setBranchProfit(new BigDecimal("69471.20"));
 
 		when(branches.findById(branch.getId())).thenReturn(Optional.of(branch));
+		when(branches.lockById(branch.getId())).thenReturn(Optional.of(branch));
 		when(branchSales.findById(sale.getId())).thenReturn(Optional.of(sale));
 		when(mapper.toEntity(any(BranchSettlementCreateRequest.class))).thenReturn(new BranchSettlement());
 		when(mapper.toAllocation(any(BranchSettlementAllocationRequest.class))).thenReturn(new BranchSettlementAllocation());

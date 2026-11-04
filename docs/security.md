@@ -88,7 +88,11 @@ On first startup, if no users exist, `IdentityBootstrap` creates an admin using 
 
 ## Branch Scoping
 
-Branch access is enforced in service methods as well as controllers. A user with a branch-scoped role must not be able to read or mutate another branch by changing a URL parameter.
+Branch access is enforced in the services through `BranchAccessService`, on top of the role checks in the controllers. A user with a branch-scoped role cannot read or mutate another branch by changing a URL parameter.
+
+- `OWNER`: every branch.
+- `ACCOUNTANT`, `PROCUREMENT_MANAGER`, `WAREHOUSE_MANAGER`, `DISTRIBUTION_MANAGER`: every branch, unless assigned specific branches.
+- All other roles: assigned branches only. No assigned branches means no branch access (fail closed).
 
 ## API Errors
 

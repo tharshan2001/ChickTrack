@@ -4,6 +4,7 @@ import com.chick.app.branch.domain.Branch;
 import com.chick.app.branch.repository.BranchRepository;
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.exception.ResourceNotFoundException;
+import com.chick.app.identity.security.BranchAccessService;
 import com.chick.app.payment.domain.BranchSettlement;
 import com.chick.app.payment.domain.BranchSettlementAllocation;
 import com.chick.app.payment.dto.BalanceResponse;
@@ -36,21 +37,27 @@ public class SettlementService {
 	private final SettlementMapper mapper;
 	private final BranchRepository branches;
 	private final BranchSaleRepository branchSales;
+	private final BranchAccessService branchAccess;
 
 	public SettlementService(
 			BranchSettlementRepository settlements,
 			SettlementMapper mapper,
 			BranchRepository branches,
-			BranchSaleRepository branchSales) {
+			BranchSaleRepository branchSales,
+			BranchAccessService branchAccess) {
 		this.settlements = settlements;
 		this.mapper = mapper;
 		this.branches = branches;
 		this.branchSales = branchSales;
+		this.branchAccess = branchAccess;
 	}
 
 	@Transactional(readOnly = true)
 	public Page<BranchSettlementResponse> list(Pageable pageable, UUID branchId) {
-		Specification<BranchSettlement> specification = (root, query, cb) -> cb.conjunction();
+		if (branchId != null) {
+			branchAccess.require(branchId);
+		}
+		Specification<BranchSettlement> specification = branchAccess.restrict("branch");
 		if (branchId != null) {
 			specification = specification.and((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
 		}
@@ -59,12 +66,15 @@ public class SettlementService {
 
 	@Transactional(readOnly = true)
 	public BranchSettlementResponse get(UUID id) {
-		return mapper.toResponse(find(id));
+		BranchSettlement settlement = find(id);
+		branchAccess.require(settlement.getBranch().getId());
+		return mapper.toResponse(settlement);
 	}
 
 	@Transactional
 	public BranchSettlementResponse create(BranchSettlementCreateRequest request) {
-		Branch branch = branches.findById(request.branchId())
+		branchAccess.require(request.branchId());
+		Branch branch = branches.lockById(request.branchId())
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", request.branchId()));
 
 		Map<UUID, BigDecimal> requestedBySale = new LinkedHashMap<>();
@@ -118,6 +128,7 @@ public class SettlementService {
 	@Transactional
 	public BranchSettlementResponse reverse(UUID id, SettlementReverseRequest request) {
 		BranchSettlement settlement = find(id);
+		branchAccess.require(settlement.getBranch().getId());
 		if (settlement.getStatus() != BranchSettlement.Status.POSTED) {
 			throw new BusinessException("INVALID_STATUS_TRANSITION",
 					"Settlement cannot be reversed in its current status", HttpStatus.CONFLICT);
@@ -129,6 +140,7 @@ public class SettlementService {
 
 	@Transactional(readOnly = true)
 	public BalanceResponse branchBalance(UUID branchId) {
+		branchAccess.require(branchId);
 		branches.findById(branchId)
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
 

@@ -10,6 +10,7 @@ import com.chick.app.common.service.DocumentNumberService;
 import com.chick.app.distribution.domain.Distribution;
 import com.chick.app.distribution.domain.DistributionStatus;
 import com.chick.app.distribution.repository.DistributionRepository;
+import com.chick.app.identity.security.BranchAccessService;
 import com.chick.app.pricing.dto.DailyPriceResponse;
 import com.chick.app.pricing.service.DailyPriceService;
 import com.chick.app.sales.domain.BranchSale;
@@ -22,7 +23,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import com.chick.app.common.time.BusinessTime;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
@@ -51,6 +52,7 @@ public class BranchSaleService {
 	private final DailyPriceService dailyPrices;
 	private final BranchSaleMapper mapper;
 	private final DocumentNumberService documentNumbers;
+	private final BranchAccessService branchAccess;
 
 	public BranchSaleService(
 			BranchSaleRepository sales,
@@ -59,7 +61,8 @@ public class BranchSaleService {
 			DistributionRepository distributions,
 			DailyPriceService dailyPrices,
 			BranchSaleMapper mapper,
-			DocumentNumberService documentNumbers) {
+			DocumentNumberService documentNumbers,
+			BranchAccessService branchAccess) {
 		this.sales = sales;
 		this.branches = branches;
 		this.chickenTypes = chickenTypes;
@@ -67,11 +70,13 @@ public class BranchSaleService {
 		this.dailyPrices = dailyPrices;
 		this.mapper = mapper;
 		this.documentNumbers = documentNumbers;
+		this.branchAccess = branchAccess;
 	}
 
 	@Transactional
 	public BranchSaleResponse record(BranchSaleCreateRequest request) {
-		Branch branch = branches.findById(request.branchId())
+		branchAccess.require(request.branchId());
+		Branch branch = branches.lockById(request.branchId())
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", request.branchId()));
 
 		BranchSale sale = sales.findByBranchAndSaleDate(branch, request.saleDate())
@@ -85,7 +90,7 @@ public class BranchSaleService {
 		sale.getItems().clear();
 
 		Map<UUID, BranchStock> stock = branchStock(branch, sale.getId());
-		Instant effectiveAt = request.saleDate().plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().minusNanos(1);
+		Instant effectiveAt = BusinessTime.endOf(request.saleDate());
 
 		BigDecimal totalSales = BigDecimal.ZERO;
 		BigDecimal transferValue = BigDecimal.ZERO;
@@ -131,9 +136,25 @@ public class BranchSaleService {
 		return mapper.toResponse(sales.save(sale));
 	}
 
+	/**
+	 * Weight the branch still holds per chicken type: received from distributions minus weight
+	 * already sold.
+	 */
+	@Transactional(readOnly = true)
+	public Map<UUID, BigDecimal> availableWeightByChickenType(UUID branchId) {
+		Branch branch = branches.findById(branchId)
+				.orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
+		Map<UUID, BigDecimal> available = new HashMap<>();
+		branchStock(branch, null).forEach((chickenTypeId, stock) -> available.put(chickenTypeId, stock.availableWeight()));
+		return available;
+	}
+
 	@Transactional(readOnly = true)
 	public Page<BranchSaleResponse> list(Pageable pageable, UUID branchId, LocalDate from, LocalDate to) {
-		Specification<BranchSale> specification = (root, query, cb) -> cb.conjunction();
+		if (branchId != null) {
+			branchAccess.require(branchId);
+		}
+		Specification<BranchSale> specification = branchAccess.restrict("branch");
 		if (branchId != null) {
 			specification = specification.and((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
 		}
@@ -150,6 +171,7 @@ public class BranchSaleService {
 	public BranchSaleResponse get(UUID id) {
 		BranchSale sale = sales.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("BranchSale", id));
+		branchAccess.require(sale.getBranch().getId());
 		return mapper.toResponse(sale);
 	}
 

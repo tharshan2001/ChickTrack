@@ -1,66 +1,45 @@
 package com.chick.app.report.service;
 
-import com.chick.app.branch.domain.Branch;
-import com.chick.app.common.exception.BusinessException;
-import com.chick.app.identity.repository.UserAccountRepository;
-import java.util.LinkedHashSet;
-import java.util.Set;
+import com.chick.app.identity.security.BranchAccessService;
+import com.chick.app.identity.security.BranchAccessService.BranchAccess;
 import java.util.UUID;
-import java.util.stream.Collectors;
-import org.springframework.http.HttpStatus;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 @Component
 public class ReportScopeService {
 
-	private final UserAccountRepository users;
+	private final BranchAccessService branchAccess;
 
-	public ReportScopeService(UserAccountRepository users) {
-		this.users = users;
+	public ReportScopeService(BranchAccessService branchAccess) {
+		this.branchAccess = branchAccess;
 	}
 
 	public Scope resolve(UUID requestedBranchId) {
-		Set<UUID> allowed = allowedBranches();
-		if (requestedBranchId != null && !allowed.isEmpty() && !allowed.contains(requestedBranchId)) {
-			throw new BusinessException("FORBIDDEN",
-					"Branch is outside the authenticated user's scope", HttpStatus.FORBIDDEN);
+		BranchAccess access = branchAccess.current();
+		if (requestedBranchId != null && !access.allows(requestedBranchId)) {
+			throw BranchAccessService.forbidden();
 		}
-		return new Scope(allowed, requestedBranchId);
+		return new Scope(access, requestedBranchId);
 	}
 
-	private Set<UUID> allowedBranches() {
-		Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-		if (authentication == null || !authentication.isAuthenticated()) {
-			return Set.of();
-		}
-		return users.findByUsername(authentication.getName())
-				.map(user -> user.getBranches().stream()
-						.map(Branch::getId)
-						.collect(Collectors.toCollection(LinkedHashSet::new)))
-				.map(Set::copyOf)
-				.orElseGet(Set::of);
-	}
+	public record Scope(BranchAccess access, UUID requestedBranchId) {
 
-	public record Scope(Set<UUID> allowedBranches, UUID requestedBranchId) {
-
-		public Scope {
-			allowedBranches = Set.copyOf(allowedBranches);
-		}
-
+		/**
+		 * Whether a row belonging to {@code branchId} is visible. Rows without a branch (warehouse
+		 * stock) are visible only to users with access to every branch.
+		 */
 		public boolean allows(UUID branchId) {
 			if (branchId == null) {
-				return true;
+				return access.all() && requestedBranchId == null;
 			}
 			if (requestedBranchId != null) {
 				return requestedBranchId.equals(branchId);
 			}
-			return allowedBranches.isEmpty() || allowedBranches.contains(branchId);
+			return access.allows(branchId);
 		}
 
 		public boolean restricted() {
-			return !allowedBranches.isEmpty();
+			return !access.all();
 		}
 	}
 }

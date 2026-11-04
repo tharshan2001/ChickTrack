@@ -8,6 +8,6 @@ import java.util.UUID;
 
 public record BranchReceiptItemRequest(
 		@NotNull UUID distributionItemId,
-		@NotNull @DecimalMin("0.001") BigDecimal receivedWeightKg,
+		@NotNull @DecimalMin("0.000") BigDecimal receivedWeightKg,
 		DiscrepancyReason discrepancyReason) {
 }

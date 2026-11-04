@@ -2,8 +2,7 @@ package com.chick.app.common.service;
 
 import com.chick.app.common.domain.DocumentSequence;
 import com.chick.app.common.repository.DocumentSequenceRepository;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
+import com.chick.app.common.time.BusinessTime;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,14 +17,9 @@ public class DocumentNumberService {
 
 	@Transactional
 	public String next(String documentType, String prefix) {
-		int year = ZonedDateTime.now(ZoneId.of("Asia/Colombo")).getYear();
+		int year = BusinessTime.today().getYear();
+		sequences.ensureExists(documentType, year);
 		DocumentSequence sequence = sequences.findForUpdate(documentType, year);
-		if (sequence == null) {
-			sequence = new DocumentSequence();
-			sequence.setDocumentType(documentType);
-			sequence.setYear(year);
-			sequence.setNextValue(1L);
-		}
 		long value = sequence.getNextValue();
 		sequence.setNextValue(value + 1);
 		sequences.save(sequence);

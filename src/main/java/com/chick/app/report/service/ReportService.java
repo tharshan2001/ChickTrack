@@ -27,7 +27,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import com.chick.app.common.time.BusinessTime;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -140,8 +140,8 @@ public class ReportService {
 
 	@Transactional(readOnly = true)
 	public ReportResult<StockReportRow> stock(UUID chickenTypeId, LocalDate asOf) {
-		LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now(ZoneOffset.UTC);
-		Instant endOfDay = effectiveAsOf.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+		LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now(BusinessTime.ZONE);
+		Instant endOfDay = effectiveAsOf.plusDays(1).atStartOfDay(BusinessTime.ZONE).toInstant();
 
 		Specification<StockBatch> specification =
 				(root, query, cb) -> cb.lessThan(root.get("receivedAt"), endOfDay);
@@ -156,7 +156,7 @@ public class ReportService {
 		BigDecimal stockValue = BigDecimal.ZERO;
 
 		for (StockBatch batch : stockBatches.findAll(specification)) {
-			LocalDate receivedDate = batch.getReceivedAt().atZone(ZoneOffset.UTC).toLocalDate();
+			LocalDate receivedDate = batch.getReceivedAt().atZone(BusinessTime.ZONE).toLocalDate();
 			BigDecimal value = batch.getRemainingWeightKg()
 					.multiply(batch.getLandedCostPerKg())
 					.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
@@ -357,8 +357,8 @@ public class ReportService {
 		validateRange(from, to);
 		ReportScopeService.Scope scope = scopeService.resolve(branchId);
 
-		Instant start = from != null ? from.atStartOfDay(ZoneOffset.UTC).toInstant() : null;
-		Instant end = to != null ? to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant() : null;
+		Instant start = from != null ? from.atStartOfDay(BusinessTime.ZONE).toInstant() : null;
+		Instant end = to != null ? to.plusDays(1).atStartOfDay(BusinessTime.ZONE).toInstant() : null;
 
 		Specification<InventoryMovement> specification =
 				(root, query, cb) -> cb.and(root.get("type").in(SHRINKAGE_MOVEMENT_TYPES));
@@ -383,7 +383,7 @@ public class ReportService {
 				continue;
 			}
 			rows.add(new ShrinkageReportRow(
-					movement.getCreatedAt().atZone(ZoneOffset.UTC).toLocalDate(),
+					movement.getCreatedAt().atZone(BusinessTime.ZONE).toLocalDate(),
 					movement.getStockBatch().getChickenType().getName(),
 					distribution != null ? distribution.getBranch().getName() : null,
 					movement.getWeightKg(),

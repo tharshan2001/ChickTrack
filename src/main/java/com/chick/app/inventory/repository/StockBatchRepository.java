@@ -17,4 +17,9 @@ public interface StockBatchRepository
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select b from StockBatch b where b.chickenType = :chickenType and b.remainingWeightKg > 0 order by b.receivedAt asc, b.id asc")
 	java.util.List<StockBatch> findAvailableByChickenType(@Param("chickenType") ChickenType chickenType);
+
+	/** Locks the given batches in id order so concurrent dispatches cannot deadlock or oversell. */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select b from StockBatch b where b.id in :ids order by b.id")
+	java.util.List<StockBatch> lockAllById(@Param("ids") java.util.Collection<UUID> ids);
 }

@@ -26,18 +26,22 @@ import com.chick.app.distribution.repository.ExpenseAllocationRepository;
 import com.chick.app.distribution.repository.DistributionRepository;
 import com.chick.app.expense.domain.ExpenseCategory;
 import com.chick.app.expense.repository.ExpenseCategoryRepository;
+import com.chick.app.identity.security.BranchAccessService;
 import com.chick.app.inventory.domain.InventoryMovement;
 import com.chick.app.inventory.domain.StockBatch;
 import com.chick.app.inventory.repository.InventoryMovementRepository;
 import com.chick.app.inventory.repository.StockBatchRepository;
 import com.chick.app.margin.service.CompanyMarginRuleService;
+import com.chick.app.sales.service.BranchSaleService;
+import java.util.HashSet;
+import java.util.Set;
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.exception.ResourceNotFoundException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import com.chick.app.common.time.BusinessTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -71,6 +75,8 @@ public class DistributionService {
 	private final ExpenseAllocationRepository expenseAllocations;
 	private final DocumentNumberService documentNumbers;
 	private final CompanyMarginRuleService marginRules;
+	private final BranchAccessService branchAccess;
+	private final BranchSaleService branchSales;
 
 	public DistributionService(
 			DistributionRepository distributions,
@@ -83,7 +89,9 @@ public class DistributionService {
 			BranchReceiptRepository branchReceipts,
 			ExpenseAllocationRepository expenseAllocations,
 			DocumentNumberService documentNumbers,
-			CompanyMarginRuleService marginRules) {
+			CompanyMarginRuleService marginRules,
+			BranchAccessService branchAccess,
+			BranchSaleService branchSales) {
 		this.distributions = distributions;
 		this.mapper = mapper;
 		this.branches = branches;
@@ -95,11 +103,16 @@ public class DistributionService {
 		this.expenseAllocations = expenseAllocations;
 		this.documentNumbers = documentNumbers;
 		this.marginRules = marginRules;
+		this.branchAccess = branchAccess;
+		this.branchSales = branchSales;
 	}
 
 	@Transactional(readOnly = true)
 	public Page<DistributionResponse> list(Pageable pageable, UUID branchId, DistributionStatus status, LocalDate from, LocalDate to) {
-		Specification<Distribution> specification = (root, query, cb) -> cb.conjunction();
+		if (branchId != null) {
+			branchAccess.require(branchId);
+		}
+		Specification<Distribution> specification = branchAccess.restrict("branch");
 		if (branchId != null) {
 			specification = specification.and((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
 		}
@@ -117,11 +130,12 @@ public class DistributionService {
 
 	@Transactional(readOnly = true)
 	public DistributionResponse get(UUID id) {
-		return toResponse(find(id));
+		return toResponse(findAccessible(id));
 	}
 
 	@Transactional
 	public DistributionResponse create(DistributionCreateRequest request) {
+		branchAccess.require(request.branchId());
 		Branch branch = branches.findById(request.branchId())
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", request.branchId()));
 
@@ -221,7 +235,7 @@ public class DistributionService {
 
 	@Transactional
 	public DistributionResponse dispatch(UUID id) {
-		Distribution distribution = find(id);
+		Distribution distribution = findAccessible(id);
 		if (distribution.getStatus() != DistributionStatus.DRAFT) {
 			throw new BusinessException("INVALID_STATUS_TRANSITION",
 					"Only draft distributions can be dispatched", HttpStatus.CONFLICT);
@@ -234,6 +248,10 @@ public class DistributionService {
 			StockBatch batch = item.getStockBatch();
 			batchesById.putIfAbsent(batch.getId(), batch);
 			weightByBatch.merge(batch.getId(), item.getWeightKg(), BigDecimal::add);
+		}
+		// Lock the batches before checking stock so two dispatches cannot both pass the check.
+		for (StockBatch locked : stockBatches.lockAllById(weightByBatch.keySet())) {
+			batchesById.put(locked.getId(), locked);
 		}
 		for (var entry : weightByBatch.entrySet()) {
 			StockBatch batch = batchesById.get(entry.getKey());
@@ -264,10 +282,27 @@ public class DistributionService {
 
 	@Transactional
 	public BranchReceiptResponse receive(UUID id, BranchReceiptRequest request) {
-		Distribution distribution = find(id);
+		Distribution distribution = findAccessible(id);
+		branches.lockById(distribution.getBranch().getId());
 		if (distribution.getStatus() != DistributionStatus.DISPATCHED) {
 			throw new BusinessException("INVALID_STATUS_TRANSITION",
 					"Only dispatched distributions can be received", HttpStatus.CONFLICT);
+		}
+
+		Set<UUID> expectedLines = new HashSet<>();
+		distribution.getItems().forEach(item -> expectedLines.add(item.getId()));
+		Set<UUID> requestedLines = new HashSet<>();
+		for (var itemRequest : request.items()) {
+			if (!requestedLines.add(itemRequest.distributionItemId())) {
+				throw new BusinessException("VALIDATION_FAILED",
+						"Distribution line " + itemRequest.distributionItemId() + " appears more than once",
+						HttpStatus.BAD_REQUEST);
+			}
+		}
+		if (!requestedLines.containsAll(expectedLines)) {
+			throw new BusinessException("VALIDATION_FAILED",
+					"Every distribution line must be received; record a discrepancy for missing weight",
+					HttpStatus.BAD_REQUEST);
 		}
 
 		BranchReceipt receipt = new BranchReceipt();
@@ -322,7 +357,8 @@ public class DistributionService {
 
 	@Transactional
 	public DistributionResponse reverse(UUID id, DistributionReverseRequest request) {
-		Distribution distribution = find(id);
+		Distribution distribution = findAccessible(id);
+		branches.lockById(distribution.getBranch().getId());
 		if (distribution.getStatus() == DistributionStatus.DRAFT) {
 			// Drafts never decremented stock, so there is nothing to restore.
 			distribution.setStatus(DistributionStatus.REVERSED);
@@ -330,15 +366,25 @@ public class DistributionService {
 			return toResponse(distributions.save(distribution));
 		}
 		if (distribution.getStatus() == DistributionStatus.DISPATCHED || distribution.getStatus() == DistributionStatus.RECEIVED) {
+			// Weight that comes back to the warehouse: the full dispatch if the branch never received it,
+			// otherwise only what the branch received. Recorded discrepancies stay as losses.
+			Map<DistributionItem, BigDecimal> returnedWeight = returnedWeightByLine(distribution);
+			if (distribution.getStatus() == DistributionStatus.RECEIVED) {
+				ensureBranchStillHoldsStock(distribution, returnedWeight);
+			}
 			for (DistributionItem item : distribution.getItems()) {
+				BigDecimal returned = returnedWeight.get(item);
+				if (returned.compareTo(BigDecimal.ZERO) <= 0) {
+					continue;
+				}
 				StockBatch batch = item.getStockBatch();
-				batch.setRemainingWeightKg(batch.getRemainingWeightKg().add(item.getWeightKg()));
+				batch.setRemainingWeightKg(batch.getRemainingWeightKg().add(returned));
 				stockBatches.save(batch);
 
 				InventoryMovement movement = new InventoryMovement();
 				movement.setStockBatch(batch);
 				movement.setType(InventoryMovement.MovementType.REVERSAL);
-				movement.setWeightKg(item.getWeightKg());
+				movement.setWeightKg(returned);
 				movement.setReferenceType("DISTRIBUTION");
 				movement.setReferenceId(distribution.getId());
 				movement.setReason(request.reason());
@@ -352,13 +398,46 @@ public class DistributionService {
 				"Distribution cannot be reversed in its current status", HttpStatus.CONFLICT);
 	}
 
-	private Instant endOfDay(LocalDate date) {
-		return date.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().minusNanos(1);
+	private Map<DistributionItem, BigDecimal> returnedWeightByLine(Distribution distribution) {
+		Map<DistributionItem, BigDecimal> returned = new IdentityHashMap<>();
+		boolean received = distribution.getStatus() == DistributionStatus.RECEIVED;
+		for (DistributionItem item : distribution.getItems()) {
+			returned.put(item, received ? BigDecimal.ZERO : item.getWeightKg());
+		}
+		if (received) {
+			for (BranchReceipt receipt : distribution.getReceipts()) {
+				for (BranchReceiptItem receiptItem : receipt.getItems()) {
+					returned.merge(receiptItem.getDistributionItem(), receiptItem.getReceivedWeightKg(), BigDecimal::add);
+				}
+			}
+		}
+		return returned;
 	}
 
-	private Distribution find(UUID id) {
-		return distributions.findById(id)
+	private void ensureBranchStillHoldsStock(Distribution distribution, Map<DistributionItem, BigDecimal> returnedWeight) {
+		Map<UUID, BigDecimal> returnedByType = new HashMap<>();
+		returnedWeight.forEach((item, weight) ->
+				returnedByType.merge(item.getChickenType().getId(), weight, BigDecimal::add));
+		Map<UUID, BigDecimal> available = branchSales.availableWeightByChickenType(distribution.getBranch().getId());
+		for (var entry : returnedByType.entrySet()) {
+			BigDecimal held = available.getOrDefault(entry.getKey(), BigDecimal.ZERO);
+			if (held.compareTo(entry.getValue()) < 0) {
+				throw new BusinessException("BUSINESS_RULE_VIOLATION",
+						"The branch has already sold stock from this distribution; correct the branch sales first",
+						HttpStatus.CONFLICT);
+			}
+		}
+	}
+
+	private Instant endOfDay(LocalDate date) {
+		return BusinessTime.endOf(date);
+	}
+
+	private Distribution findAccessible(UUID id) {
+		Distribution distribution = distributions.findById(id)
 				.orElseThrow(() -> new ResourceNotFoundException("Distribution", id));
+		branchAccess.require(distribution.getBranch().getId());
+		return distribution;
 	}
 
 	private void recalculate(Distribution distribution) {

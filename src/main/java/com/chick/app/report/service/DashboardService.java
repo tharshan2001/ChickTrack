@@ -17,7 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.ZoneOffset;
+import com.chick.app.common.time.BusinessTime;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -59,7 +59,7 @@ public class DashboardService {
 
 	@Transactional(readOnly = true)
 	public DashboardResponse dashboard(LocalDate from, LocalDate to, UUID branchId) {
-		LocalDate effectiveFrom = from != null ? from : LocalDate.now(ZoneOffset.UTC);
+		LocalDate effectiveFrom = from != null ? from : LocalDate.now(BusinessTime.ZONE);
 		LocalDate effectiveTo = to != null ? to : effectiveFrom;
 		reports.validateRange(effectiveFrom, effectiveTo);
 		ReportScopeService.Scope scope = scopeService.resolve(branchId);
@@ -75,7 +75,7 @@ public class DashboardService {
 			procurementWeight = procurementWeight.add(procurement.getPaidWeightKg());
 		}
 
-		Instant stockCutoff = effectiveTo.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+		Instant stockCutoff = effectiveTo.plusDays(1).atStartOfDay(BusinessTime.ZONE).toInstant();
 		BigDecimal stockWeight = BigDecimal.ZERO;
 		BigDecimal stockValue = BigDecimal.ZERO;
 		for (StockBatch batch : stockBatches.findAll((root, query, cb) -> cb.lessThan(root.get("receivedAt"), stockCutoff))) {
@@ -149,8 +149,8 @@ public class DashboardService {
 		}
 		BigDecimal branchProfit = totalSales.subtract(salesTransferValue);
 
-		Instant shrinkageStart = effectiveFrom.atStartOfDay(ZoneOffset.UTC).toInstant();
-		Instant shrinkageEnd = effectiveTo.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant();
+		Instant shrinkageStart = effectiveFrom.atStartOfDay(BusinessTime.ZONE).toInstant();
+		Instant shrinkageEnd = effectiveTo.plusDays(1).atStartOfDay(BusinessTime.ZONE).toInstant();
 		BigDecimal shrinkageWeight = BigDecimal.ZERO;
 		Specification<InventoryMovement> shrinkageSpec = (root, query, cb) -> cb.and(
 				root.get("type").in(ReportService.SHRINKAGE_MOVEMENT_TYPES),

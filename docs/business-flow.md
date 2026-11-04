@@ -15,7 +15,12 @@ This document is the single reference for how ChickTrack works end to end: who d
 | `VIEWER` | Read-only reporting | `/reports/*`, `/dashboard` |
 | `DRIVER` | Delivery confirmation | (delivery module pending) |
 
-Users are assigned branches (`user_branches`). Report and dashboard queries are scoped to those branches; requesting a branch outside the user's scope returns `FORBIDDEN`.
+Users are assigned branches (`user_branches`). Every branch-owned read and write (distributions, receiving, sales, settlements, balances, reports, dashboard) is scoped to those branches; a branch outside the user's scope returns `FORBIDDEN`.
+
+- `OWNER` sees every branch.
+- Head-office roles (`ACCOUNTANT`, `PROCUREMENT_MANAGER`, `WAREHOUSE_MANAGER`, `DISTRIBUTION_MANAGER`) see every branch unless they are assigned specific branches.
+- Every other role sees only its assigned branches. A user with no assigned branches sees none.
+- Warehouse-level report rows (stock batches, warehouse movements) are visible only to users with access to every branch.
 
 ## 2. End-to-End Flow
 
@@ -67,7 +72,7 @@ purchase price (typed at purchase)          P
 - The user authenticates with the web login form; the authorization server issues an access token and a refresh token.
 - The access token carries `roles` as a claim and is mapped to `ROLE_*` authorities on every API call.
 - Every `/api/**` endpoint requires a valid bearer token. Bootstrap admin is created on first start (`app.oauth.admin.username` / `app.oauth.admin.password`).
-- Document writes are protected by role checks in the controllers (`@PreAuthorize`). Branch scoping is enforced inside the dashboard and report queries (`ReportScopeService`); scoping on the write and read endpoints of sales, settlements and balances is pending (see §7).
+- Document writes are protected by role checks in the controllers (`@PreAuthorize`) and by branch scoping in the services (`BranchAccessService`).
 
 ### 3.2 Master Data
 
@@ -137,9 +142,12 @@ The warehouse sends stock to a branch.
 ### 3.7 Branch Receiving
 
 - The branch confirms the weight it received per line and may give a discrepancy reason (`MELT_WATER`, `DAMAGE`, `WEIGHT_DIFFERENCE`, `SHORT_DELIVERY`, `OTHER`).
+- Every dispatched line must be confirmed exactly once; a fully lost line is recorded as `0` received with a reason.
 - Received weight cannot exceed the dispatched weight.
 - Any discrepancy is written to the ledger as a `LOSS` movement and shows up as shrinkage in the reports.
-- After receiving, the distribution is `RECEIVED`. A dispatched or received distribution can be reversed, which returns the weight to the batches and writes a `REVERSAL` movement.
+- After receiving, the distribution is `RECEIVED`.
+- A dispatched distribution can be reversed: the full weight returns to the batches with a `REVERSAL` movement.
+- A received distribution can be reversed only while the branch still holds the received weight (nothing sold from it). Only the received weight returns to the batches; recorded discrepancies stay as losses.
 
 ### 3.8 Branch Daily Sales and Profit Marking
 
@@ -191,7 +199,9 @@ The branch does not report quantities or chicken types and no FIFO costing happe
 | `INSUFFICIENT_BRANCH_STOCK` | Branch sold more than it received |
 | `PRICE_NOT_CONFIGURED` | No branch selling price for the chicken type and date |
 | `INVALID_STATUS_TRANSITION` | Action not allowed in the current status |
-| `FORBIDDEN` | Branch outside the authenticated user's scope |
+| `FORBIDDEN` | Branch outside the authenticated user's scope, or role not allowed |
+| `CONCURRENT_MODIFICATION` | The record changed in another request; reload and retry |
+| `DATA_CONFLICT` | The request conflicts with existing data (unique or foreign key) |
 | `REPORT_NOT_FOUND` | Unknown report name in an export request |
 | `REPORT_GENERATION_FAILED` | Export rendering failed |
 
