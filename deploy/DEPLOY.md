@@ -10,6 +10,18 @@ phone ──https──▶ nginx :443 ──▶ app :8090 ──▶ postgres :54
 
 The examples use `api.cloudbox.my`. To serve the API on the bare domain instead, set `API_DOMAIN=cloudbox.my` and point that record at the server.
 
+## Quick deploy from your Mac
+
+With the DNS record in place (section 1), one command does sections 2 to 4 and every later update:
+
+```bash
+./deploy/remote-deploy.sh <user>@<server-ip>              # STAGING=1 first for a test certificate, FORCE=1 to replace it
+```
+
+It uploads the last commit (not uncommitted changes), installs Docker, opens the firewall, creates `deploy/.env` with generated passwords and the signing key if they don't exist, backs up the database before an update, gets the certificate, starts the stack and waits for `https://api.cloudbox.my/actuator/health`. On the first run it prints the owner's password once. You type your SSH and sudo passwords in your own terminal.
+
+The manual steps below do the same thing by hand.
+
 ## 1. Before you start
 
 - A server running Ubuntu 22.04 or 24.04 with at least 2 GB RAM (1 GB works with `JAVA_OPTS=-Xmx512m`).
