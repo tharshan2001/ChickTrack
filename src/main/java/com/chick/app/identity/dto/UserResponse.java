@@ -11,6 +11,7 @@ public record UserResponse(
 		String email,
 		String phone,
 		boolean active,
+		boolean mustChangePassword,
 		Set<String> roles,
 		Set<UUID> branchIds,
 		long version,

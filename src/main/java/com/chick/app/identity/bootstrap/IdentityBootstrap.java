@@ -14,6 +14,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
+/**
+ * Seeds the owner, the single main admin, from {@code OAUTH_ADMIN_USERNAME} and
+ * {@code OAUTH_ADMIN_PASSWORD} when no owner exists yet. The owner then creates every other user.
+ */
 public class IdentityBootstrap implements ApplicationRunner {
 
 	private static final Logger log = LoggerFactory.getLogger(IdentityBootstrap.class);
@@ -40,8 +44,13 @@ public class IdentityBootstrap implements ApplicationRunner {
 	@Override
 	@Transactional
 	public void run(ApplicationArguments args) {
-		if (users.count() > 0) {
+		// The owner is the single main admin. Seed it once; never touch it again on later starts.
+		if (users.existsByRolesName("OWNER")) {
 			return;
+		}
+		if (users.existsByUsernameIgnoreCase(adminUsername)) {
+			throw new IllegalStateException("Cannot seed the owner: username '" + adminUsername
+					+ "' already belongs to a non-owner user. Set OAUTH_ADMIN_USERNAME to another name.");
 		}
 
 		Role owner = roles.findByName("OWNER")
@@ -50,7 +59,7 @@ public class IdentityBootstrap implements ApplicationRunner {
 		UserAccount admin = new UserAccount();
 		admin.setUsername(adminUsername);
 		admin.setPasswordHash(passwordEncoder.encode(adminPassword));
-		admin.setFullName("System Administrator");
+		admin.setFullName("Owner");
 		admin.setActive(true);
 		admin.getRoles().add(owner);
 		users.save(admin);
@@ -59,6 +68,6 @@ public class IdentityBootstrap implements ApplicationRunner {
 			log.warn("Bootstrap admin '{}' was created with the default password. Change it before deployment.",
 					adminUsername);
 		}
-		log.info("Created bootstrap admin user '{}'", adminUsername);
+		log.info("Seeded owner (main admin) '{}'", adminUsername);
 	}
 }

@@ -14,7 +14,5 @@ public interface UserAccountRepository
 
 	boolean existsByUsernameIgnoreCase(String username);
 
-	@org.springframework.data.jpa.repository.Query(
-			"select count(u) from UserAccount u join u.roles r where u.active = true and r.name = 'OWNER'")
-	long countActiveOwners();
+	boolean existsByRolesName(String roleName);
 }

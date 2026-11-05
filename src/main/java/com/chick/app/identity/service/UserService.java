@@ -12,6 +12,7 @@ import com.chick.app.identity.dto.PasswordResetRequest;
 import com.chick.app.identity.dto.RoleResponse;
 import com.chick.app.identity.dto.UserBranchesRequest;
 import com.chick.app.identity.dto.UserCreateRequest;
+import com.chick.app.identity.dto.UserCredentialsResponse;
 import com.chick.app.identity.dto.UserResponse;
 import com.chick.app.identity.dto.UserRolesRequest;
 import com.chick.app.identity.dto.UserStatusRequest;
@@ -21,6 +22,7 @@ import com.chick.app.identity.repository.OAuthAuthorizationRevoker;
 import com.chick.app.identity.repository.RoleRepository;
 import com.chick.app.identity.repository.UserAccountRepository;
 import com.chick.app.identity.security.CurrentUserService;
+import com.chick.app.identity.security.PasswordGenerator;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +36,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * User management for the owner. The owner is the single main admin, created by
+ * {@code IdentityBootstrap}: the OWNER role cannot be given to anyone else, and the owner account
+ * cannot be demoted, deactivated or have its password reset through these endpoints (the owner
+ * changes it with {@code POST /me/password}).
+ */
 @Service
 public class UserService {
 
@@ -45,6 +53,7 @@ public class UserService {
 	private final PasswordEncoder passwordEncoder;
 	private final OAuthAuthorizationRevoker authorizations;
 	private final CurrentUserService currentUser;
+	private final PasswordGenerator passwordGenerator;
 	private final UserMapper mapper;
 
 	public UserService(
@@ -54,6 +63,7 @@ public class UserService {
 			PasswordEncoder passwordEncoder,
 			OAuthAuthorizationRevoker authorizations,
 			CurrentUserService currentUser,
+			PasswordGenerator passwordGenerator,
 			UserMapper mapper) {
 		this.users = users;
 		this.roles = roles;
@@ -61,6 +71,7 @@ public class UserService {
 		this.passwordEncoder = passwordEncoder;
 		this.authorizations = authorizations;
 		this.currentUser = currentUser;
+		this.passwordGenerator = passwordGenerator;
 		this.mapper = mapper;
 	}
 
@@ -111,21 +122,25 @@ public class UserService {
 
 	@Transactional
 	@Audited(action = "USER_CREATE", entityType = "User")
-	public UserResponse create(UserCreateRequest request) {
+	public UserCredentialsResponse create(UserCreateRequest request) {
 		String username = request.username().trim();
 		if (users.existsByUsernameIgnoreCase(username)) {
 			throw new BusinessException("CONFLICT", "Username already exists: " + username, HttpStatus.CONFLICT);
 		}
+		Set<Role> newRoles = resolveRoles(request.roles());
+		rejectOwnerRole(newRoles);
+		String generated = isBlank(request.password()) ? passwordGenerator.generate() : null;
 		UserAccount user = new UserAccount();
 		user.setUsername(username);
-		user.setPasswordHash(passwordEncoder.encode(request.password()));
+		user.setPasswordHash(passwordEncoder.encode(generated != null ? generated : request.password()));
+		user.setMustChangePassword(!Boolean.FALSE.equals(request.mustChangePassword()));
 		user.setFullName(request.fullName().trim());
 		user.setEmail(blankToNull(request.email()));
 		user.setPhone(blankToNull(request.phone()));
 		user.setActive(true);
-		user.setRoles(resolveRoles(request.roles()));
+		user.setRoles(newRoles);
 		user.setBranches(resolveBranches(request.branchIds() == null ? Set.of() : request.branchIds()));
-		return mapper.toResponse(users.save(user));
+		return new UserCredentialsResponse(mapper.toResponse(users.save(user)), generated);
 	}
 
 	@Transactional
@@ -142,12 +157,9 @@ public class UserService {
 	@Audited(action = "USER_ROLES", entityType = "User")
 	public UserResponse setRoles(UUID id, UserRolesRequest request) {
 		UserAccount user = find(id);
+		ensureNotOwner(user, "The owner's roles cannot be changed");
 		Set<Role> newRoles = resolveRoles(request.roles());
-		boolean losesOwner = hasRole(user, OWNER) && newRoles.stream().noneMatch(r -> OWNER.equals(r.getName()));
-		if (losesOwner) {
-			ensureNotSelf(user, "You cannot remove your own OWNER role");
-			ensureAnotherActiveOwner(user);
-		}
+		rejectOwnerRole(newRoles);
 		user.setRoles(newRoles);
 		UserResponse response = mapper.toResponse(users.save(user));
 		authorizations.revokeAll(user.getUsername());
@@ -166,11 +178,8 @@ public class UserService {
 	@Audited(action = "USER_STATUS", entityType = "User")
 	public UserResponse setStatus(UUID id, UserStatusRequest request) {
 		UserAccount user = find(id);
-		if (!request.active() && user.isActive()) {
-			ensureNotSelf(user, "You cannot deactivate your own account");
-			if (hasRole(user, OWNER)) {
-				ensureAnotherActiveOwner(user);
-			}
+		if (!request.active()) {
+			ensureNotOwner(user, "The owner account cannot be deactivated");
 		}
 		user.setActive(request.active());
 		UserResponse response = mapper.toResponse(users.save(user));
@@ -182,12 +191,15 @@ public class UserService {
 
 	@Transactional
 	@Audited(action = "USER_PASSWORD_RESET", entityType = "User")
-	public UserResponse resetPassword(UUID id, PasswordResetRequest request) {
+	public UserCredentialsResponse resetPassword(UUID id, PasswordResetRequest request) {
 		UserAccount user = find(id);
-		user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+		ensureNotOwner(user, "The owner changes their own password with POST /api/v1/me/password");
+		String generated = isBlank(request.newPassword()) ? passwordGenerator.generate() : null;
+		user.setPasswordHash(passwordEncoder.encode(generated != null ? generated : request.newPassword()));
+		user.setMustChangePassword(!Boolean.FALSE.equals(request.mustChangePassword()));
 		UserResponse response = mapper.toResponse(users.save(user));
 		authorizations.revokeAll(user.getUsername());
-		return response;
+		return new UserCredentialsResponse(response, generated);
 	}
 
 	@Transactional
@@ -202,6 +214,7 @@ public class UserService {
 					"New password must differ from the current one", HttpStatus.BAD_REQUEST);
 		}
 		user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
+		user.setMustChangePassword(false);
 		UserResponse response = mapper.toResponse(users.save(user));
 		authorizations.revokeAll(user.getUsername());
 		return response;
@@ -234,23 +247,25 @@ public class UserService {
 		return resolved;
 	}
 
-	private void ensureNotSelf(UserAccount user, String message) {
-		if (user.getId().equals(currentUser.currentUser().getId())) {
+	private static void ensureNotOwner(UserAccount user, String message) {
+		if (hasRole(user, OWNER)) {
 			throw new BusinessException("BUSINESS_RULE_VIOLATION", message, HttpStatus.BAD_REQUEST);
 		}
 	}
 
-	private void ensureAnotherActiveOwner(UserAccount user) {
-		long owners = users.countActiveOwners();
-		long remaining = user.isActive() ? owners - 1 : owners;
-		if (remaining < 1) {
+	private static void rejectOwnerRole(Set<Role> newRoles) {
+		if (newRoles.stream().anyMatch(r -> OWNER.equals(r.getName()))) {
 			throw new BusinessException("BUSINESS_RULE_VIOLATION",
-					"At least one active OWNER must remain", HttpStatus.BAD_REQUEST);
+					"OWNER belongs to the main admin only and cannot be assigned", HttpStatus.BAD_REQUEST);
 		}
 	}
 
 	private static boolean hasRole(UserAccount user, String role) {
 		return user.getRoles().stream().anyMatch(r -> role.equals(r.getName()));
+	}
+
+	private static boolean isBlank(String value) {
+		return value == null || value.isBlank();
 	}
 
 	private static String blankToNull(String value) {

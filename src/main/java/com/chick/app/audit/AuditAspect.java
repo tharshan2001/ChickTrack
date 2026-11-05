@@ -75,11 +75,12 @@ public class AuditAspect {
 			}
 		}
 
+		Object state = result instanceof AuditView view ? view.auditView() : result;
 		if (entityId == null) {
-			entityId = idOf(result);
+			entityId = idOf(state);
 		}
 		auditLogs.append(actorId, username, audited.action(), audited.entityType(), entityId,
-				result == null ? null : json.writeValueAsString(result),
+				state == null ? null : json.writeValueAsString(state),
 				json.writeValueAsString(metadata));
 	}
 

@@ -115,7 +115,7 @@ Seeded roles:
 
 ## Bootstrap Admin
 
-On first startup, if no users exist, `IdentityBootstrap` creates an admin using `OAUTH_ADMIN_USERNAME` and `OAUTH_ADMIN_PASSWORD`. Change the default password before any deployment.
+On startup, if no `OWNER` exists, `IdentityBootstrap` seeds the owner (the single main admin) using `OAUTH_ADMIN_USERNAME` and `OAUTH_ADMIN_PASSWORD`. Change the default password before any deployment. Only the owner holds `OWNER`; it creates all other users and hands out their credentials. See [Users API](api/users.md#the-owner-main-admin).
 
 ## Branch Scoping
 

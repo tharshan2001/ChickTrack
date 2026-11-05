@@ -13,6 +13,7 @@ import com.chick.app.distribution.dto.*;
 import com.chick.app.distribution.domain.DiscrepancyReason;
 import com.chick.app.distribution.service.DistributionService;
 import com.chick.app.identity.dto.UserBranchesRequest;
+import com.chick.app.identity.dto.PasswordResetRequest;
 import com.chick.app.identity.dto.UserCreateRequest;
 import com.chick.app.identity.dto.UserRolesRequest;
 import com.chick.app.identity.dto.UserStatusRequest;
@@ -172,7 +173,7 @@ class FlowIntegrationTest {
 
 		// A branch receiver with no branches sees nothing; with one branch sees only it.
 		var receiver = userService.create(new UserCreateRequest("recv" + sfx, "receiver-pass-1", "Receiver", null, null,
-				Set.of("BRANCH_RECEIVER"), Set.of()));
+				Set.of("BRANCH_RECEIVER"), Set.of(), false)).user();
 		assertThat(receiver.roles()).containsExactly("BRANCH_RECEIVER");
 		as("recv" + sfx);
 		assertThat(sales.list(Pageable.unpaged(), null, null, null).getTotalElements()).isZero();
@@ -184,15 +185,30 @@ class FlowIntegrationTest {
 		assertThat(sales.list(Pageable.unpaged(), null, null, null).getTotalElements()).isEqualTo(1);
 		assertThatThrownBy(() -> sales.list(Pageable.unpaged(), other, null, null)).isInstanceOf(BusinessException.class);
 
-		// The last active owner cannot be demoted or deactivated, nor can admins lock themselves out.
+		// The owner is the single main admin: it cannot be demoted, deactivated or given to anyone else.
 		as("admin");
 		UUID adminId = userService.me().id();
 		assertThatThrownBy(() -> userService.setStatus(adminId, new UserStatusRequest(false)))
 				.isInstanceOf(BusinessException.class);
 		assertThatThrownBy(() -> userService.setRoles(adminId, new UserRolesRequest(Set.of("ACCOUNTANT"))))
 				.isInstanceOf(BusinessException.class);
+		assertThatThrownBy(() -> userService.resetPassword(adminId, new PasswordResetRequest(null, null)))
+				.isInstanceOf(BusinessException.class);
+		assertThatThrownBy(() -> userService.create(new UserCreateRequest("own2" + sfx, null, "Second owner", null, null,
+				Set.of("OWNER"), Set.of(), null))).isInstanceOf(BusinessException.class).hasMessageContaining("OWNER");
+		assertThatThrownBy(() -> userService.setRoles(receiver.id(), new UserRolesRequest(Set.of("OWNER"))))
+				.isInstanceOf(BusinessException.class);
 		assertThatThrownBy(() -> userService.create(new UserCreateRequest("RECV" + sfx, "another-pass", "Dup", null, null,
-				Set.of("VIEWER"), Set.of()))).isInstanceOf(BusinessException.class).hasMessageContaining("exists");
+				Set.of("VIEWER"), Set.of(), null))).isInstanceOf(BusinessException.class).hasMessageContaining("exists");
+
+		// Without a password the server generates one, returns it once and requires a change at first sign-in.
+		var issued = userService.create(new UserCreateRequest("gen" + sfx, null, "Generated", null, null,
+				Set.of("VIEWER"), Set.of(), null));
+		assertThat(issued.temporaryPassword()).hasSize(12);
+		assertThat(issued.user().mustChangePassword()).isTrue();
+		var reset = userService.resetPassword(issued.user().id(), new PasswordResetRequest(null, null));
+		assertThat(reset.temporaryPassword()).hasSize(12).isNotEqualTo(issued.temporaryPassword());
+		assertThat(reset.user().mustChangePassword()).isTrue();
 
 		// Warehouse adjustments change the batch and the ledger together.
 		var damage = inventory.adjust(new StockAdjustmentRequest(batchId, StockAdjustment.Type.DAMAGE,

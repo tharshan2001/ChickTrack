@@ -7,6 +7,7 @@ import com.chick.app.identity.dto.PasswordResetRequest;
 import com.chick.app.identity.dto.RoleResponse;
 import com.chick.app.identity.dto.UserBranchesRequest;
 import com.chick.app.identity.dto.UserCreateRequest;
+import com.chick.app.identity.dto.UserCredentialsResponse;
 import com.chick.app.identity.dto.UserResponse;
 import com.chick.app.identity.dto.UserRolesRequest;
 import com.chick.app.identity.dto.UserStatusRequest;
@@ -77,7 +78,7 @@ public class UserController {
 
 	@PostMapping("/users")
 	@PreAuthorize("hasRole('OWNER')")
-	public ResponseEntity<ApiResponse<UserResponse>> create(@Valid @RequestBody UserCreateRequest request) {
+	public ResponseEntity<ApiResponse<UserCredentialsResponse>> create(@Valid @RequestBody UserCreateRequest request) {
 		return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(service.create(request)));
 	}
 
@@ -109,9 +110,10 @@ public class UserController {
 
 	@PostMapping("/users/{id}/password")
 	@PreAuthorize("hasRole('OWNER')")
-	public ResponseEntity<ApiResponse<UserResponse>> resetPassword(
+	public ResponseEntity<ApiResponse<UserCredentialsResponse>> resetPassword(
 			@PathVariable UUID id,
-			@Valid @RequestBody PasswordResetRequest request) {
-		return ResponseEntity.ok(ApiResponse.of(service.resetPassword(id, request)));
+			@Valid @RequestBody(required = false) PasswordResetRequest request) {
+		PasswordResetRequest body = request == null ? new PasswordResetRequest(null, null) : request;
+		return ResponseEntity.ok(ApiResponse.of(service.resetPassword(id, body)));
 	}
 }

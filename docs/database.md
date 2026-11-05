@@ -24,6 +24,7 @@ Flyway owns all schema changes. Migrations are immutable once applied.
 | `V15__integrity_constraints.sql` | Status and non-negative `CHECK` constraints, allocation target check, margin rule uniqueness, reporting indexes |
 | `V16__stock_adjustments.sql` | Warehouse stock adjustments |
 | `V17__stock_reservations.sql` | Reserved weight on batches for draft distributions |
+| `V18__must_change_password.sql` | `users.must_change_password` flag for owner-issued passwords |
 
 ## Current Tables
 

@@ -85,7 +85,8 @@ public class SecurityConfig {
 	@Order(2)
 	SecurityFilterChain resourceServerSecurityFilterChain(
 			HttpSecurity http,
-			com.chick.app.sync.SyncRequestRepository syncRequests) throws Exception {
+			com.chick.app.sync.SyncRequestRepository syncRequests,
+			com.chick.app.identity.repository.UserAccountRepository users) throws Exception {
 		http
 				.securityMatcher("/api/**")
 				.authorizeHttpRequests((authorize) -> authorize
@@ -93,6 +94,8 @@ public class SecurityConfig {
 						.anyRequest().authenticated())
 				.oauth2ResourceServer((oauth2) -> oauth2.jwt(jwt ->
 						jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())))
+				.addFilterAfter(new PasswordChangeRequiredFilter(users),
+						org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter.class)
 				.addFilterAfter(new com.chick.app.sync.IdempotencyFilter(syncRequests),
 						org.springframework.security.web.access.intercept.AuthorizationFilter.class);
 		return http.build();
@@ -172,7 +175,8 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer() {
+	OAuth2TokenCustomizer<JwtEncodingContext> jwtTokenCustomizer(
+			com.chick.app.identity.repository.UserAccountRepository users) {
 		return context -> {
 			if (context.getTokenType() == OAuth2TokenType.ACCESS_TOKEN) {
 				Authentication authentication = context.getPrincipal();
@@ -182,6 +186,12 @@ public class SecurityConfig {
 						.map(authority -> authority.substring(5))
 						.collect(Collectors.toSet());
 				context.getClaims().claim("roles", roles);
+				boolean mustChange = users.findByUsername(authentication.getName())
+						.map(com.chick.app.identity.domain.UserAccount::isMustChangePassword)
+						.orElse(false);
+				if (mustChange) {
+					context.getClaims().claim(PasswordChangeRequiredFilter.CLAIM, true);
+				}
 			}
 		};
 	}

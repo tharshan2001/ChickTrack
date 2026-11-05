@@ -135,7 +135,7 @@ def main():
     def mk(name, role, branches=()):
         return data(expect(A, f"create {role.lower()}", admin.call("POST", "/users", {
             "username": name + SFX, "password": pw, "fullName": name.title(), "roles": [role],
-            "branchIds": [b["id"] for b in branches]}), 201))
+            "branchIds": [b["id"] for b in branches], "mustChangePassword": False}), 201))
     u_proc = mk("proc", "PROCUREMENT_MANAGER")
     u_wh = mk("wh", "WAREHOUSE_MANAGER")
     u_dist = mk("dist", "DISTRIBUTION_MANAGER")
@@ -158,7 +158,20 @@ def main():
     v = data(expect(A, "set branches", admin.call("PUT", f"/users/{u_view['id']}/branches", {"branchIds": [kandy["id"], colombo["id"]]}), 200))
     check(A, "branches replaced", v and len(v["branchIds"]) == 2)
     expect(A, "self-deactivate -> 400", admin.call("PATCH", f"/users/{me['id']}/status", {"active": False}), 400, "BUSINESS_RULE_VIOLATION")
-    expect(A, "self-demote last owner -> 400", admin.call("PUT", f"/users/{me['id']}/roles", {"roles": ["ACCOUNTANT"]}), 400, "BUSINESS_RULE_VIOLATION")
+    expect(A, "self-demote owner -> 400", admin.call("PUT", f"/users/{me['id']}/roles", {"roles": ["ACCOUNTANT"]}), 400, "BUSINESS_RULE_VIOLATION")
+    expect(A, "owner password reset via /users -> 400", admin.call("POST", f"/users/{me['id']}/password", {}), 400, "BUSINESS_RULE_VIOLATION")
+    expect(A, "create second owner -> 400", admin.call("POST", "/users", {"username": "own2" + SFX, "fullName": "X", "roles": ["OWNER"]}), 400, "BUSINESS_RULE_VIOLATION")
+    expect(A, "promote to owner -> 400", admin.call("PUT", f"/users/{u_view['id']}/roles", {"roles": ["OWNER"]}), 400, "BUSINESS_RULE_VIOLATION")
+    # generated credentials + forced change at first sign-in
+    gen = data(expect(A, "create with generated password", admin.call("POST", "/users", {"username": "gen" + SFX, "fullName": "Gen", "roles": ["VIEWER"]}), 201))
+    check(A, "temporary password returned once", gen and len(gen.get("temporaryPassword", "")) == 12 and gen["mustChangePassword"], gen)
+    g = login(gen["username"], gen["temporaryPassword"])
+    expect(A, "must-change user: /me allowed", g.call("GET", "/me"), 200)
+    expect(A, "must-change user: other API -> 403", g.call("GET", "/branches"), 403, "PASSWORD_CHANGE_REQUIRED")
+    expect(A, "must-change user changes password", g.call("POST", "/me/password", {"currentPassword": gen["temporaryPassword"], "newPassword": "Own-pass-123"}), 200)
+    expect(A, "same token works after change", g.call("GET", "/branches"), 200)
+    rs = data(expect(A, "reset with generated password", admin.call("POST", f"/users/{gen['id']}/password"), 200))
+    check(A, "reset returns new temporary password", rs and len(rs.get("temporaryPassword", "")) == 12 and rs["mustChangePassword"], rs)
 
     # login every role
     proc, wh, dist, acc = (login(u["username"], pw) for u in (u_proc, u_wh, u_dist, u_acc))
@@ -176,7 +189,7 @@ def main():
     except PermissionError:
         check(A, "deactivated user cannot sign in", True)
     expect(A, "reactivate", admin.call("PATCH", f"/users/{u_none['id']}/status", {"active": True}), 200)
-    expect(A, "reset password", admin.call("POST", f"/users/{u_none['id']}/password", {"newPassword": "Reset-pass-456"}), 200)
+    expect(A, "reset password", admin.call("POST", f"/users/{u_none['id']}/password", {"newPassword": "Reset-pass-456", "mustChangePassword": False}), 200)
     nb = login(u_none["username"], "Reset-pass-456")
     expect(A, "own password: wrong current -> 400", nb.call("POST", "/me/password", {"currentPassword": "bad", "newPassword": "New-pass-789"}), 400, "BUSINESS_RULE_VIOLATION")
     expect(A, "own password change", nb.call("POST", "/me/password", {"currentPassword": "Reset-pass-456", "newPassword": "New-pass-789"}), 200)

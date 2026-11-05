@@ -20,6 +20,6 @@ public interface UserMapper {
 		Set<String> roles = user.getRoles().stream().map(Role::getName).collect(Collectors.toCollection(TreeSet::new));
 		Set<UUID> branchIds = user.getBranches().stream().map(Branch::getId).collect(Collectors.toSet());
 		return new UserResponse(user.getId(), user.getUsername(), user.getFullName(), user.getEmail(), user.getPhone(),
-				user.isActive(), roles, branchIds, user.getVersion(), user.getCreatedAt(), user.getUpdatedAt());
+				user.isActive(), user.isMustChangePassword(), roles, branchIds, user.getVersion(), user.getCreatedAt(), user.getUpdatedAt());
 	}
 }
