@@ -2,8 +2,10 @@ package com.chick.app.report.service;
 
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.time.BusinessTime;
+import com.chick.app.distribution.domain.BranchReceiptItem;
 import com.chick.app.distribution.domain.Distribution;
 import com.chick.app.distribution.domain.DistributionItem;
+import com.chick.app.distribution.repository.BranchReceiptRepository;
 import com.chick.app.distribution.repository.DistributionRepository;
 import com.chick.app.expense.domain.OperatingExpense;
 import com.chick.app.expense.repository.OperatingExpenseRepository;
@@ -28,12 +30,10 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 import org.springframework.data.jpa.domain.Specification;
@@ -48,8 +48,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <pre>
  * head office margin   = transfer value - landed cost - distribution expenses   (posted distributions, by distribution date)
  * branch profit        = branch sales - transfer value of the stock sold        (branch sales, by sale date)
- * stock losses         = warehouse loss/damage at landed cost
- *                      + receiving discrepancies at the transfer price          (by the day they were recorded)
+ * stock losses         = warehouse loss/damage at landed cost                   (by the day recorded)
+ *                      + receiving discrepancies at the transfer price          (by the receipt's receivedAt)
  * operating expenses   = posted operating expenses                              (by expense date)
  * net profit           = head office margin + branch profit - stock losses - operating expenses
  * </pre>
@@ -72,6 +72,7 @@ public class ProfitLossService {
 	private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
 
 	private final DistributionRepository distributions;
+	private final BranchReceiptRepository receipts;
 	private final BranchSaleRepository branchSales;
 	private final InventoryMovementRepository movements;
 	private final OperatingExpenseRepository operatingExpenses;
@@ -79,11 +80,13 @@ public class ProfitLossService {
 
 	public ProfitLossService(
 			DistributionRepository distributions,
+			BranchReceiptRepository receipts,
 			BranchSaleRepository branchSales,
 			InventoryMovementRepository movements,
 			OperatingExpenseRepository operatingExpenses,
 			ReportScopeService scopeService) {
 		this.distributions = distributions;
+		this.receipts = receipts;
 		this.branchSales = branchSales;
 		this.movements = movements;
 		this.operatingExpenses = operatingExpenses;
@@ -201,38 +204,37 @@ public class ProfitLossService {
 			}
 		}
 
-		// Stock losses: loss and damage by the day they were recorded.
-		Specification<InventoryMovement> lossSpec = (root, query, cb) -> cb.and(
-				root.get("type").in(ReportService.SHRINKAGE_MOVEMENT_TYPES),
-				cb.greaterThanOrEqualTo(root.get("createdAt"), BusinessTime.startOf(from)),
-				cb.lessThan(root.get("createdAt"), BusinessTime.startOf(to.plusDays(1))));
-		Map<UUID, Optional<Distribution>> lossDistributions = new HashMap<>();
-		for (InventoryMovement movement : movements.findAll(lossSpec)) {
-			BigDecimal weight = movement.getWeightKg();
-			BigDecimal landedValue = weight.multiply(movement.getStockBatch().getLandedCostPerKg());
-			boolean transit = "DISTRIBUTION".equals(movement.getReferenceType()) && movement.getReferenceId() != null;
-			BigDecimal value = landedValue;
-			UUID movementBranchId = null;
-			if (transit) {
-				Distribution distribution = lossDistributions
-						.computeIfAbsent(movement.getReferenceId(), distributions::findById)
-						.orElse(null);
-				if (distribution != null) {
-					movementBranchId = distribution.getBranch().getId();
-					value = transitValue(distribution, movement, landedValue);
-				}
-			}
-			if (branchId != null ? !branchId.equals(movementBranchId) : !scope.allows(movementBranchId)) {
-				continue;
-			}
-			for (Totals totals : targets(summary, buckets, BusinessTime.dateOf(movement.getCreatedAt()))) {
-				totals.stockLossWeightKg = totals.stockLossWeightKg.add(weight);
-				if (transit) {
-					totals.transitLossValue = totals.transitLossValue.add(value);
-				}
-				else {
+		// Warehouse losses: loss and damage adjustments by the day they were recorded. They belong to
+		// no branch, so only all-branch users without a branch filter see them.
+		if (branchId == null && scope.allows(null)) {
+			Specification<InventoryMovement> lossSpec = (root, query, cb) -> cb.and(
+					root.get("type").in(ReportService.SHRINKAGE_MOVEMENT_TYPES),
+					cb.or(cb.isNull(root.get("referenceType")), cb.notEqual(root.get("referenceType"), "DISTRIBUTION")),
+					cb.greaterThanOrEqualTo(root.get("createdAt"), BusinessTime.startOf(from)),
+					cb.lessThan(root.get("createdAt"), BusinessTime.startOf(to.plusDays(1))));
+			for (InventoryMovement movement : movements.findAll(lossSpec)) {
+				BigDecimal weight = movement.getWeightKg();
+				BigDecimal value = weight.multiply(movement.getStockBatch().getLandedCostPerKg());
+				for (Totals totals : targets(summary, buckets, BusinessTime.dateOf(movement.getCreatedAt()))) {
+					totals.stockLossWeightKg = totals.stockLossWeightKg.add(weight);
 					totals.warehouseLossValue = totals.warehouseLossValue.add(value);
 				}
+			}
+		}
+
+		// Transit losses: receiving discrepancies dated by when the branch received the stock, so a
+		// receipt entered late still lands in the right period.
+		for (BranchReceiptItem item : receipts.discrepancies(BusinessTime.startOf(from), BusinessTime.startOf(to.plusDays(1)))) {
+			Distribution distribution = item.getBranchReceipt().getDistribution();
+			UUID receiptBranchId = distribution.getBranch().getId();
+			if (branchId != null ? !branchId.equals(receiptBranchId) : !scope.allows(receiptBranchId)) {
+				continue;
+			}
+			BigDecimal weight = item.getDiscrepancyWeightKg();
+			BigDecimal value = weight.multiply(transitPricePerKg(distribution, item.getDistributionItem()));
+			for (Totals totals : targets(summary, buckets, BusinessTime.dateOf(item.getBranchReceipt().getReceivedAt()))) {
+				totals.stockLossWeightKg = totals.stockLossWeightKg.add(weight);
+				totals.transitLossValue = totals.transitLossValue.add(value);
 			}
 		}
 
@@ -322,22 +324,17 @@ public class ProfitLossService {
 	}
 
 	/**
-	 * A receiving discrepancy is valued at the transfer price of that batch's line: the branch is
-	 * never charged for weight it did not receive, though our margin was counted at dispatch. A
-	 * reversed distribution counted no margin, so its losses stay at landed cost.
+	 * A receiving discrepancy is valued at the line's transfer price: the branch is never charged for
+	 * weight it did not receive, though our margin was counted at dispatch. A reversed distribution
+	 * counted no margin, so its losses stay at landed cost.
 	 */
-	private static BigDecimal transitValue(Distribution distribution, InventoryMovement movement, BigDecimal landedValue) {
-		if (!ReportService.POSTED_DISTRIBUTION_STATUSES.contains(distribution.getStatus())) {
-			return landedValue;
+	private static BigDecimal transitPricePerKg(Distribution distribution, DistributionItem line) {
+		BigDecimal transferPrice = line.getTransferPricePerKg();
+		if (ReportService.POSTED_DISTRIBUTION_STATUSES.contains(distribution.getStatus())
+				&& transferPrice != null && transferPrice.signum() > 0) {
+			return transferPrice;
 		}
-		UUID batchId = movement.getStockBatch().getId();
-		return distribution.getItems().stream()
-				.filter(item -> item.getStockBatch().getId().equals(batchId))
-				.map(DistributionItem::getTransferPricePerKg)
-				.filter(price -> price != null && price.signum() > 0)
-				.findFirst()
-				.map(price -> movement.getWeightKg().multiply(price))
-				.orElse(landedValue);
+		return line.getStockBatch().getLandedCostPerKg();
 	}
 
 	private static List<Totals> targets(Totals summary, TreeMap<LocalDate, Bucket> buckets, LocalDate date) {

@@ -83,8 +83,23 @@ class IdempotencyFilterTest {
 		assertThat(store.rows).isEmpty();
 	}
 
+	@Test
+	void responsesWithTemporaryPasswordsAreNeverStored() throws Exception {
+		for (String path : new String[] {"/api/v1/users", "/api/v1/users/7d0c5a2e-1111-4222-8333-944455556666/password"}) {
+			callAt(path, "secret-" + path, "{}", 201);
+			MockHttpServletResponse retry = callAt(path, "secret-" + path, "{}", 201);
+			assertThat(retry.getHeader("Idempotent-Replayed")).isNull();
+		}
+		assertThat(executions).hasValue(4);
+		assertThat(store.rows).isEmpty();
+	}
+
 	private MockHttpServletResponse call(String key, String body, int status) throws Exception {
-		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/v1/branch-settlements");
+		return callAt("/api/v1/branch-settlements", key, body, status);
+	}
+
+	private MockHttpServletResponse callAt(String path, String key, String body, int status) throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
 		if (key != null) {
 			request.addHeader(IdempotencyFilter.HEADER, key);
 		}

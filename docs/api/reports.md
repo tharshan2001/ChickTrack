@@ -143,7 +143,7 @@ How each line is worked out:
 | `headOffice.margin` | Our margin: transfer revenue − cost of goods − distribution expenses | distribution date |
 | `branches.sales` / `costOfSales` / `profit` | Branch sales, the transfer value of the stock sold, and their difference | sale date |
 | `stockLosses.warehouseValue` | Warehouse loss and damage at the batch landed cost | day recorded |
-| `stockLosses.transitValue` | Receiving discrepancies at the line's transfer price (the branch is not charged for them) | day recorded |
+| `stockLosses.transitValue` | Receiving discrepancies at the line's transfer price (the branch is not charged for them) | receipt `receivedAt` |
 | `operatingExpenses` | Posted [operating expenses](expenses.md), total and per category | expense date |
 | `netProfit` | `headOffice.margin + branches.profit − stockLosses.value − operatingExpenses.total` | |
 | `netMarginPercent` | `netProfit / branches.sales × 100` (null without sales) | |

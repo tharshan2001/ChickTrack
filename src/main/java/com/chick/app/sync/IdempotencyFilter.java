@@ -37,6 +37,14 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 	private static final int MAX_KEY_LENGTH = 100;
 	private static final Set<String> METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
+	/**
+	 * Responses that can carry a one-time secret (a generated temporary password) are never stored
+	 * or replayed, so the secret is not kept in clear in {@code sync_requests}. A retry runs again:
+	 * a repeated create is refused as a duplicate username, a repeated reset issues a new password.
+	 */
+	private static final java.util.regex.Pattern SECRET_RESPONSES =
+			java.util.regex.Pattern.compile("^/api/v1/users(/[^/]+/password)?/?$");
+
 	private final SyncRequestRepository requests;
 
 	public IdempotencyFilter(SyncRequestRepository requests) {
@@ -45,7 +53,9 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 
 	@Override
 	protected boolean shouldNotFilter(HttpServletRequest request) {
-		return request.getHeader(HEADER) == null || !METHODS.contains(request.getMethod());
+		return request.getHeader(HEADER) == null
+				|| !METHODS.contains(request.getMethod())
+				|| SECRET_RESPONSES.matcher(request.getRequestURI().substring(request.getContextPath().length())).matches();
 	}
 
 	@Override

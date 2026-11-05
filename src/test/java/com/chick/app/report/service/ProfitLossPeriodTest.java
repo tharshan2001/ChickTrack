@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 
 class ProfitLossPeriodTest {
 
-	private final ProfitLossService service = new ProfitLossService(null, null, null, null, null);
+	private final ProfitLossService service = new ProfitLossService(null, null, null, null, null, null);
 
 	@Test
 	void dailyIsOneDayWithoutBreakdown() {

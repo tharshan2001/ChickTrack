@@ -100,6 +100,7 @@ Other bodies:
 - Only active branches can be assigned.
 - `OWNER` is never assigned; the owner account cannot be demoted, deactivated or reset through `/users` (see above).
 - Generated passwords use upper, lower and digits, without look-alikes (`0 O 1 l I`).
+- `Idempotency-Key` is ignored on `POST /users` and `POST /users/{id}/password`, so a temporary password is never stored for replay. A retried create returns `409` (username exists); a retried reset issues a new password.
 
 ## First Sign-In
 
