@@ -72,6 +72,9 @@ class FlowIntegrationTest {
 	@Autowired com.chick.app.identity.service.UserService userService;
 	@Autowired com.chick.app.inventory.service.InventoryService inventory;
 	@Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
+	@Autowired com.chick.app.expense.service.ExpenseCategoryService expenseCategories;
+	@Autowired com.chick.app.expense.service.OperatingExpenseService operatingExpenses;
+	@Autowired com.chick.app.report.service.ProfitLossService profitLoss;
 
 	static void as(String user) {
 		SecurityContextHolder.getContext().setAuthentication(
@@ -225,6 +228,56 @@ class FlowIntegrationTest {
 				.isEqualTo(5); // receipt, distribution, receiving loss, damage, adjustment
 		assertThat(inventory.listMovements(Pageable.unpaged(), batchId, null, null, null).getContent())
 				.extracting(m -> m.type()).contains("RECEIPT", "DISTRIBUTION", "LOSS", "DAMAGE", "ADJUSTMENT");
+
+		// Profit and loss: 80 kg dispatched at 800/kg (no margin rule), 50 kg sold at 1000/kg, 2 kg lost
+		// on receiving (at the 800 transfer price), 5 kg damaged in the warehouse (at the 800 landed cost).
+		UUID rent = expenseCategories.create(new com.chick.app.expense.dto.ExpenseCategoryCreateRequest("Rent " + sfx, null)).id();
+		UUID power = expenseCategories.create(new com.chick.app.expense.dto.ExpenseCategoryCreateRequest("Power " + sfx, null)).id();
+		LocalDate day = LocalDate.of(2026, 11, 4);
+		operatingExpenses.create(new com.chick.app.expense.dto.OperatingExpenseRequest(day, rent, branch,
+				new BigDecimal("1500"), "Landlord", null));
+		operatingExpenses.create(new com.chick.app.expense.dto.OperatingExpenseRequest(day, power, null,
+				new BigDecimal("500"), null, "Head office power"));
+		var mistake = operatingExpenses.create(new com.chick.app.expense.dto.OperatingExpenseRequest(day, power, null,
+				new BigDecimal("999"), null, "Typed twice"));
+		operatingExpenses.voidExpense(mistake.id(), new com.chick.app.expense.dto.OperatingExpenseVoidRequest("duplicate"));
+		assertThatThrownBy(() -> operatingExpenses.create(new com.chick.app.expense.dto.OperatingExpenseRequest(
+				com.chick.app.common.time.BusinessTime.today().plusDays(1), rent, null, BigDecimal.TEN, null, null)))
+				.isInstanceOf(BusinessException.class);
+
+		var all = profitLoss.profitLoss(profitLoss.resolve("custom", null, null, null, day,
+				com.chick.app.common.time.BusinessTime.today(), null), null).summary();
+		assertThat(all.headOffice().transferRevenue()).isEqualByComparingTo("64000.00");
+		assertThat(all.headOffice().costOfGoods()).isEqualByComparingTo("64000.00");
+		assertThat(all.headOffice().margin()).isEqualByComparingTo("0.00");
+		assertThat(all.branches().sales()).isEqualByComparingTo("50000.00");
+		assertThat(all.branches().profit()).isEqualByComparingTo("10000.00");
+		assertThat(all.stockLosses().weightKg()).isEqualByComparingTo("7.000");
+		assertThat(all.stockLosses().transitValue()).isEqualByComparingTo("1600.00");
+		assertThat(all.stockLosses().warehouseValue()).isEqualByComparingTo("4000.00");
+		assertThat(all.operatingExpenses().total()).isEqualByComparingTo("2000.00");
+		assertThat(all.netProfit()).isEqualByComparingTo("2400.00");
+		assertThat(all.netMarginPercent()).isEqualByComparingTo("4.80");
+
+		// One branch: no warehouse losses and no head-office expenses.
+		var kandyOnly = profitLoss.profitLoss(profitLoss.resolve("custom", null, null, null, day,
+				com.chick.app.common.time.BusinessTime.today(), null), branch).summary();
+		assertThat(kandyOnly.stockLosses().value()).isEqualByComparingTo("1600.00");
+		assertThat(kandyOnly.operatingExpenses().total()).isEqualByComparingTo("1500.00");
+		assertThat(kandyOnly.netProfit()).isEqualByComparingTo("6900.00");
+
+		// Monthly view broken down by day; yearly by month.
+		var november = profitLoss.profitLoss(profitLoss.resolve(null, null, "2026-11", null, null, null, null), null);
+		assertThat(november.breakdown()).hasSize(30);
+		var fourth = november.breakdown().stream().filter(b -> b.label().equals("2026-11-04")).findFirst().orElseThrow();
+		assertThat(fourth.statement().branches().sales()).isEqualByComparingTo("50000.00");
+		assertThat(fourth.statement().operatingExpenses().total()).isEqualByComparingTo("2000.00");
+		var year = profitLoss.profitLoss(profitLoss.resolve("yearly", null, null, 2026, null, null, null), null);
+		assertThat(year.breakdown()).hasSize(12);
+		assertThat(year.breakdown().get(10).label()).isEqualTo("2026-11");
+		assertThat(year.breakdown().get(10).statement().branches().profit()).isEqualByComparingTo("10000.00");
+		assertThat(profitLoss.profitLoss(profitLoss.resolve("daily", day, null, null, null, null, null), null)
+				.summary().branches().sales()).isEqualByComparingTo("50000.00");
 
 		// Document numbers under concurrency for a fresh type.
 		as("admin");

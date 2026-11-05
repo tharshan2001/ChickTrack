@@ -91,7 +91,8 @@ Errors use the standard format described in [Errors](errors.md).
 | Distribution | `/api/v1/distributions` | Implemented |
 | Branch sales | `/api/v1/branch-sales` | Implemented |
 | Finance | `/api/v1/branch-settlements`, `/api/v1/branches/{id}/balance` | Implemented |
-| Reports | `/api/v1/reports`, `/api/v1/dashboard` | Implemented |
+| Operating expenses | `/api/v1/expenses` | Implemented ([docs](expenses.md)) |
+| Reports | `/api/v1/reports`, `/api/v1/dashboard`, `/api/v1/reports/profit-loss` | Implemented ([docs](reports.md)) |
 
 ## OpenAPI
 

@@ -370,6 +370,40 @@ def main():
     check(A, "viewer sees no warehouse stock rows", rep is not None and len(rep["rows"]) == 0, rep)
     expect(A, "viewer cannot ask for other branch -> 403", viewer.call("GET", "/reports/sales", params={"branchId": closed["id"]}), 403)
 
+    # ---------------------------------------------------------------- operating expenses + profit and loss
+    A = "Profit & Loss"
+    exp = data(expect(A, "create branch expense", acc.call("POST", "/expenses", {"expenseDate": TODAY, "categoryId": transport["id"], "branchId": kandy["id"], "amount": "2500", "payee": "Lorry hire"}), 201))
+    check(A, "expense reference", exp and exp["reference"].startswith("EXP-"), exp)
+    data(expect(A, "create head-office expense", admin.call("POST", "/expenses", {"expenseDate": TODAY, "categoryId": transport["id"], "amount": "1000"}), 201))
+    dup = data(expect(A, "create duplicate", admin.call("POST", "/expenses", {"expenseDate": TODAY, "categoryId": transport["id"], "amount": "1000"}), 201))
+    expect(A, "void duplicate", admin.call("POST", f"/expenses/{dup['id']}/void", {"reason": "typed twice"}), 200)
+    expect(A, "void again -> 409", admin.call("POST", f"/expenses/{dup['id']}/void", {"reason": "again"}), 409, "BUSINESS_RULE_VIOLATION")
+    expect(A, "zero amount -> 400", admin.call("POST", "/expenses", {"expenseDate": TODAY, "categoryId": transport["id"], "amount": "0"}), 400, "VALIDATION_FAILED")
+    expect(A, "update", admin.call("PUT", f"/expenses/{exp['id']}", {"expenseDate": TODAY, "categoryId": transport["id"], "branchId": kandy["id"], "amount": "2400"}), 200)
+    lst = data(expect(A, "list posted today", admin.call("GET", "/expenses", params={"from": TODAY, "to": TODAY, "status": "POSTED", "categoryId": transport["id"]}), 200))
+    check(A, "2 posted expenses", lst and lst["totalElements"] == 2, lst and lst["totalElements"])
+    expect(A, "receiver cannot see expenses -> 403", kr.call("GET", "/expenses"), 403, "FORBIDDEN")
+    pl = data(expect(A, "daily P&L", acc.call("GET", "/reports/profit-loss", params={"period": "daily", "date": TODAY}), 200))
+    if pl:
+        s_ = pl["summary"]
+        net = float(s_["headOffice"]["margin"]) + float(s_["branches"]["profit"]) - float(s_["stockLosses"]["value"]) - float(s_["operatingExpenses"]["total"])
+        check(A, "net = margin + branch profit - losses - expenses", abs(net - float(s_["netProfit"])) < 0.01, s_)
+        check(A, "expenses include 3400 today", float(s_["operatingExpenses"]["total"]) >= 3400, s_["operatingExpenses"])
+        check(A, "P&L margin matches dashboard", s_["headOffice"]["margin"] == dash["ourMargin"] and s_["branches"]["sales"] == dash["totalSales"], (s_, dash))
+    m = data(expect(A, "monthly P&L by day", acc.call("GET", "/reports/profit-loss", params={"month": TODAY[:7]}), 200))
+    check(A, "monthly breakdown has every day", m and m["groupBy"] == "DAY" and len(m["breakdown"]) >= 28, m and len(m["breakdown"]))
+    y = data(expect(A, "yearly P&L by month", acc.call("GET", "/reports/profit-loss", params={"period": "yearly", "year": TODAY[:4]}), 200))
+    check(A, "yearly breakdown has 12 months", y and len(y["breakdown"]) == 12, y and len(y["breakdown"]))
+    expect(A, "custom P&L", acc.call("GET", "/reports/profit-loss", params={"period": "custom", "from": TODAY, "to": TODAY, "branchId": kandy["id"]}), 200)
+    expect(A, "custom without to -> 400", acc.call("GET", "/reports/profit-loss", params={"period": "custom", "from": TODAY}), 400, "VALIDATION_FAILED")
+    expect(A, "bad period -> 400", acc.call("GET", "/reports/profit-loss", params={"period": "weekly"}), 400, "VALIDATION_FAILED")
+    expect(A, "viewer cannot see P&L -> 403", viewer.call("GET", "/reports/profit-loss"), 403)
+    for fmt, ctype in (("csv", "text/csv"), ("pdf", "application/pdf")):
+        r = acc.call("GET", "/reports/profit-loss/export", params={"format": fmt, "month": TODAY[:7]}, raw=True)
+        check(A, f"P&L export {fmt}", r.status_code == 200 and ctype in r.headers.get("Content-Type", "") and len(r.content) > 50,
+              f"{r.status_code} {r.headers.get('Content-Type')}")
+    A = "Reports"
+
     vd = data(viewer.call("GET", "/dashboard", params={"from": TODAY, "to": TODAY}))
     check(A, "viewer dashboard hides warehouse figures", vd and vd["stockValue"] == "0.00" and vd["procurementValue"] == "0.00", vd)
     check(A, "viewer dashboard shows own sales", vd and float(vd["totalSales"]) > 0, vd)

@@ -76,6 +76,8 @@ Implemented:
 - `GET /api/v1/reports/shrinkage`
 - `GET /api/v1/reports/settlements`
 - `GET /api/v1/reports/{name}/export?format=csv|pdf`
+- `GET /api/v1/reports/profit-loss` (daily, monthly, yearly or custom; owner and accountant)
+- `GET /api/v1/reports/profit-loss/export?format=csv|pdf`
 
 See [Reports API](../api/reports.md).
 
