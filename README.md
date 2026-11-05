@@ -137,6 +137,10 @@ Configuration is read from environment variables with local defaults.
 
 Never commit `.env` or production secrets.
 
+## Deployment
+
+Production runs on one Linux server with Docker Compose (PostgreSQL, the API, nginx with Let's Encrypt for HTTPS at `api.cloudbox.my`). See [deploy/DEPLOY.md](deploy/DEPLOY.md).
+
 ## Database
 
 Flyway migrations live in `src/main/resources/db/migration`.

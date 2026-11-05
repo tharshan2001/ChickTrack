@@ -1,0 +1,12 @@
+.git
+.idea
+.vscode
+.DS_Store
+target
+docs
+scripts
+deploy
+*.md
+.env
+.env.*
+api-test-results.json

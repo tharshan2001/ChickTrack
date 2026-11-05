@@ -1,0 +1,95 @@
+# Production stack for one Linux server: PostgreSQL, the API, nginx for HTTPS and certbot for certificates.
+# First time, from the repository root:  ./deploy/init-letsencrypt.sh
+# After that:  docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
+# See deploy/DEPLOY.md.
+name: chicktrack
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chicktrack}
+      POSTGRES_USER: ${POSTGRES_USER:-chicktrack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # No published port: only the app reaches the database.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: chicktrack-backend:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-chicktrack}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-chicktrack}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      OAUTH_ISSUER: https://${API_DOMAIN:?set API_DOMAIN in deploy/.env}
+      OAUTH_ADMIN_USERNAME: ${OAUTH_ADMIN_USERNAME:-owner}
+      OAUTH_ADMIN_PASSWORD: ${OAUTH_ADMIN_PASSWORD:?set OAUTH_ADMIN_PASSWORD in deploy/.env}
+      OAUTH_MOBILE_CLIENT_ID: ${OAUTH_MOBILE_CLIENT_ID:-chicktrack-mobile}
+      OAUTH_MOBILE_REDIRECT_URI: ${OAUTH_MOBILE_REDIRECT_URI:-chicktrack://oauth2/callback}
+      OAUTH_JWK_PRIVATE_KEY: file:/run/secrets/jwk.pem
+      OAUTH_JWK_KEY_ID: ${OAUTH_JWK_KEY_ID:-chicktrack-1}
+      OAUTH_JWK_ALLOW_GENERATED: "false"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}
+    volumes:
+      # Generated once on the server (see DEPLOY.md), owned by uid 10001, mode 400.
+      - ./secrets/jwk.pem:/run/secrets/jwk.pem:ro
+    expose:
+      - "8090"
+    logging: *logging
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    # Reload every 6 hours so renewed certificates are picked up.
+    command: >
+      /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done &
+      exec /docker-entrypoint.sh nginx -g 'daemon off;'"
+    logging: *logging
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    # Renews the certificate when it is within 30 days of expiry; first issue: deploy/init-letsencrypt.sh
+    entrypoint: >
+      /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet;
+      sleep 12h & wait $${!}; done"
+    logging: *logging
+
+volumes:
+  postgres-data:
+  letsencrypt:
+  certbot-www:

@@ -37,3 +37,7 @@ build/
 .vscode/
 api-test-results.json
 __pycache__/
+
+### Deployment ###
+deploy/secrets/
+deploy/backups/
