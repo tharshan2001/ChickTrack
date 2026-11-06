@@ -8,12 +8,10 @@ import com.chick.app.chicken.repository.ChickenTypeRepository;
 import com.chick.app.common.exception.BusinessException;
 import com.chick.app.common.exception.ResourceNotFoundException;
 import com.chick.app.common.service.DocumentNumberService;
+import com.chick.app.common.time.BusinessTime;
 import com.chick.app.distribution.domain.DistributionStatus;
 import com.chick.app.distribution.repository.BranchReceiptRepository;
 import com.chick.app.distribution.repository.ReceivedLine;
-import com.chick.app.payment.service.SettlementService;
-import java.util.ArrayList;
-import java.util.List;
 import com.chick.app.identity.security.BranchAccessService;
 import com.chick.app.pricing.dto.DailyPriceResponse;
 import com.chick.app.pricing.service.DailyPriceService;
@@ -28,9 +26,12 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
-import com.chick.app.common.time.BusinessTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -40,6 +41,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Branch day close. The branch enters what it took in (total sales, Rs) and the stock it has left per
+ * chicken type. The weight that left the branch is the stock before the day minus the closing stock,
+ * costed oldest receipt first. What the branch owes is created on receipt, not here.
+ */
 @Service
 public class BranchSaleService {
 
@@ -58,7 +64,6 @@ public class BranchSaleService {
 	private final DocumentNumberService documentNumbers;
 	private final BranchAccessService branchAccess;
 	private final BranchReceiptRepository receipts;
-	private final SettlementService settlements;
 
 	public BranchSaleService(
 			BranchSaleRepository sales,
@@ -68,8 +73,7 @@ public class BranchSaleService {
 			BranchSaleMapper mapper,
 			DocumentNumberService documentNumbers,
 			BranchAccessService branchAccess,
-			BranchReceiptRepository receipts,
-			SettlementService settlements) {
+			BranchReceiptRepository receipts) {
 		this.sales = sales;
 		this.branches = branches;
 		this.chickenTypes = chickenTypes;
@@ -78,7 +82,6 @@ public class BranchSaleService {
 		this.documentNumbers = documentNumbers;
 		this.branchAccess = branchAccess;
 		this.receipts = receipts;
-		this.settlements = settlements;
 	}
 
 	@Transactional
@@ -88,8 +91,32 @@ public class BranchSaleService {
 		Branch branch = branches.lockById(request.branchId())
 				.orElseThrow(() -> new ResourceNotFoundException("Branch", request.branchId()));
 
-		BranchSale sale = sales.findByBranchAndSaleDate(branch, request.saleDate())
-				.orElseGet(BranchSale::new);
+		// Closing stock of a day is the opening stock of the next, so only the latest day can change.
+		sales.findFirstByBranchIdAndSaleDateAfterOrderBySaleDateDesc(branch.getId(), request.saleDate())
+				.ifPresent(later -> {
+					throw new BusinessException("BUSINESS_RULE_VIOLATION",
+							"The close of " + later.getSaleDate() + " is already saved; only the latest day can be changed",
+							HttpStatus.CONFLICT);
+				});
+
+		Map<UUID, BigDecimal> closingByType = new LinkedHashMap<>();
+		for (var itemRequest : request.items()) {
+			if (closingByType.put(itemRequest.chickenTypeId(),
+					itemRequest.closingWeightKg().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP)) != null) {
+				throw new BusinessException("VALIDATION_FAILED",
+						"Enter one closing stock per chicken type", HttpStatus.BAD_REQUEST);
+			}
+		}
+
+		Map<UUID, BranchStock> stock = stockBefore(branch.getId(), request.saleDate());
+		for (var entry : stock.entrySet()) {
+			if (entry.getValue().availableWeight().signum() > 0 && !closingByType.containsKey(entry.getKey())) {
+				throw new BusinessException("VALIDATION_FAILED",
+						"Enter the closing stock of " + chickenTypeName(entry.getKey()), HttpStatus.BAD_REQUEST);
+			}
+		}
+
+		BranchSale sale = sales.findByBranchAndSaleDate(branch, request.saleDate()).orElseGet(BranchSale::new);
 		if (sale.getId() == null) {
 			sale.setReference(documentNumbers.next("BRANCH_SALE", "SALE"));
 		}
@@ -98,84 +125,80 @@ public class BranchSaleService {
 		sale.setNotes(request.notes());
 		sale.getItems().clear();
 
-		Map<UUID, BranchStock> stock = branchStock(branch, sale.getId());
 		Instant effectiveAt = BusinessTime.endOf(request.saleDate());
+		BigDecimal cogs = BigDecimal.ZERO;
+		BigDecimal expected = BigDecimal.ZERO;
+		boolean expectedKnown = true;
 
-		BigDecimal totalSales = BigDecimal.ZERO;
-		BigDecimal transferValue = BigDecimal.ZERO;
-
-		for (var itemRequest : request.items()) {
-			ChickenType chickenType = chickenTypes.findById(itemRequest.chickenTypeId())
-					.orElseThrow(() -> new ResourceNotFoundException("ChickenType", itemRequest.chickenTypeId()));
-			BigDecimal weight = itemRequest.weightKg().setScale(WEIGHT_SCALE, RoundingMode.HALF_UP);
-
+		for (var entry : closingByType.entrySet()) {
+			ChickenType chickenType = chickenTypes.findById(entry.getKey())
+					.orElseThrow(() -> new ResourceNotFoundException("ChickenType", entry.getKey()));
 			BranchStock chickenStock = stock.computeIfAbsent(chickenType.getId(), id -> new BranchStock());
-			BigDecimal available = chickenStock.availableWeight();
-			if (weight.compareTo(available) > 0) {
-				throw new BusinessException("INSUFFICIENT_BRANCH_STOCK",
-						"Branch has " + available.stripTrailingZeros().toPlainString()
-								+ " kg of " + chickenType.getName() + " available to sell",
+			BigDecimal opening = chickenStock.availableWeight();
+			BigDecimal closing = entry.getValue();
+			if (closing.compareTo(opening) > 0) {
+				throw new BusinessException("CLOSING_ABOVE_STOCK",
+						"Closing stock of " + chickenType.getName() + " is more than the "
+								+ opening.stripTrailingZeros().toPlainString() + " kg the branch held",
 						HttpStatus.CONFLICT);
 			}
-
-			BigDecimal sellingPrice = resolveSellingPrice(chickenType.getId(), branch.getId(), effectiveAt);
-			// Cost the sold weight against the stock the branch still holds, oldest receipt first.
-			BigDecimal cost = chickenStock.take(weight).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
-			BigDecimal transferPrice = cost.divide(weight, COST_SCALE, RoundingMode.HALF_UP);
+			BigDecimal sold = opening.subtract(closing);
+			BigDecimal cost = chickenStock.take(sold).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
 
 			BranchSaleItem item = new BranchSaleItem();
 			item.setBranchSale(sale);
 			item.setChickenType(chickenType);
-			item.setWeightKg(weight);
-			item.setSellingPricePerKg(sellingPrice);
-			item.setTransferPricePerKg(transferPrice);
-			item.setRevenue(weight.multiply(sellingPrice).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+			item.setOpeningWeightKg(opening);
+			item.setClosingWeightKg(closing);
+			item.setWeightKg(sold);
 			item.setCost(cost);
-			item.setProfit(item.getRevenue().subtract(item.getCost()));
-			sale.getItems().add(item);
+			item.setTransferPricePerKg(sold.signum() == 0
+					? BigDecimal.ZERO.setScale(COST_SCALE)
+					: cost.divide(sold, COST_SCALE, RoundingMode.HALF_UP));
 
-			totalSales = totalSales.add(item.getRevenue());
-			transferValue = transferValue.add(item.getCost());
-		}
-
-		sale.setTotalSales(totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		sale.setTransferValue(transferValue.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-		sale.setBranchProfit(totalSales.subtract(transferValue).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
-
-		if (sale.getId() != null) {
-			BigDecimal settled = settlements.settledAmount(sale.getId());
-			if (sale.getTransferValue().compareTo(settled) < 0) {
-				throw new BusinessException("BUSINESS_RULE_VIOLATION",
-						"This day's sales already have " + settled.toPlainString()
-								+ " settled; the new transfer value of " + sale.getTransferValue().toPlainString()
-								+ " is lower. Reverse the settlement first.",
-						HttpStatus.CONFLICT);
+			BigDecimal price = sellingPrice(chickenType.getId(), branch.getId(), effectiveAt);
+			if (price != null) {
+				item.setSellingPricePerKg(price);
+				item.setRevenue(sold.multiply(price).setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+				item.setProfit(item.getRevenue().subtract(cost));
+				expected = expected.add(item.getRevenue());
 			}
+			else if (sold.signum() > 0) {
+				expectedKnown = false;
+			}
+			sale.getItems().add(item);
+			cogs = cogs.add(cost);
 		}
 
+		BigDecimal totalSales = request.totalSales().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+		sale.setTotalSales(totalSales);
+		sale.setExpectedSales(expectedKnown ? expected.setScale(MONEY_SCALE, RoundingMode.HALF_UP) : null);
+		sale.setTransferValue(cogs.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		sale.setBranchProfit(totalSales.subtract(sale.getTransferValue()));
 		return mapper.toResponse(sales.save(sale));
 	}
 
-	/**
-	 * Weight the branch still holds per chicken type: received from distributions minus weight
-	 * already sold.
-	 */
+	/** Weight the branch holds now per chicken type: everything received minus every closed day. */
 	@Transactional(readOnly = true)
 	public Map<UUID, BigDecimal> availableWeightByChickenType(UUID branchId) {
-		Branch branch = branches.findById(branchId)
-				.orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
+		branches.findById(branchId).orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
 		Map<UUID, BigDecimal> available = new HashMap<>();
-		branchStock(branch, null).forEach((chickenTypeId, stock) -> available.put(chickenTypeId, stock.availableWeight()));
+		currentStock(branchId).forEach((chickenTypeId, s) -> available.put(chickenTypeId, s.availableWeight()));
 		return available;
 	}
 
-	/** Stock on hand at a branch per chicken type, for branch users and the owner. */
+	/**
+	 * Stock on hand at a branch per chicken type. With a date, the stock before that day closes
+	 * (its opening stock): received by the end of the day minus earlier closed days.
+	 */
 	@Transactional(readOnly = true)
-	public List<BranchStockResponse> stock(UUID branchId) {
+	public List<BranchStockResponse> stock(UUID branchId, LocalDate date) {
 		branchAccess.require(branchId);
-		return availableWeightByChickenType(branchId).entrySet().stream()
-				.map(e -> new BranchStockResponse(e.getKey(), e.getValue()))
-				.sorted(java.util.Comparator.comparing(r -> r.chickenTypeId().toString()))
+		branches.findById(branchId).orElseThrow(() -> new ResourceNotFoundException("Branch", branchId));
+		Map<UUID, BranchStock> stock = date == null ? currentStock(branchId) : stockBefore(branchId, date);
+		return stock.entrySet().stream()
+				.map(e -> new BranchStockResponse(e.getKey(), e.getValue().availableWeight()))
+				.sorted(Comparator.comparing(r -> r.chickenTypeId().toString()))
 				.toList();
 	}
 
@@ -205,35 +228,49 @@ public class BranchSaleService {
 		return mapper.toResponse(sale);
 	}
 
-	private BigDecimal resolveSellingPrice(UUID chickenTypeId, UUID branchId, Instant effectiveAt) {
-		DailyPriceResponse price;
+	/** Branch selling price for the day, or null when none is set (expected sales are then unknown). */
+	private BigDecimal sellingPrice(UUID chickenTypeId, UUID branchId, Instant effectiveAt) {
 		try {
-			price = dailyPrices.current(chickenTypeId, branchId, null, effectiveAt);
+			DailyPriceResponse price = dailyPrices.current(chickenTypeId, branchId, null, effectiveAt);
+			return price.sellingPricePerKg();
 		}
 		catch (ResourceNotFoundException ex) {
-			throw new BusinessException("PRICE_NOT_CONFIGURED",
-					"No branch selling price is configured for chicken type " + chickenTypeId
-							+ " on " + effectiveAt,
-					HttpStatus.BAD_REQUEST);
+			return null;
 		}
-		return price.sellingPricePerKg();
 	}
 
-	/**
-	 * Stock the branch holds per chicken type: its received lines as cost layers, oldest first,
-	 * with the weight already sold (by sales other than {@code excludedSaleId}) consumed from the front.
-	 */
-	private Map<UUID, BranchStock> branchStock(Branch branch, UUID excludedSaleId) {
+	private String chickenTypeName(UUID chickenTypeId) {
+		return chickenTypes.findById(chickenTypeId).map(ChickenType::getName).orElse("every chicken type");
+	}
+
+	/** Received lines as cost layers, with every closed day's weight consumed from the front. */
+	private Map<UUID, BranchStock> currentStock(UUID branchId) {
+		Map<UUID, BranchStock> stock = layers(branchId, null);
+		consume(stock, sales.soldWeight(branchId));
+		return stock;
+	}
+
+	/** Stock before {@code date} closes: received by the end of that day, minus earlier closed days. */
+	private Map<UUID, BranchStock> stockBefore(UUID branchId, LocalDate date) {
+		Map<UUID, BranchStock> stock = layers(branchId, BusinessTime.endOf(date));
+		consume(stock, sales.soldWeightBefore(branchId, date));
+		return stock;
+	}
+
+	private Map<UUID, BranchStock> layers(UUID branchId, Instant receivedBy) {
 		Map<UUID, BranchStock> stock = new HashMap<>();
-		for (ReceivedLine line : receipts.receivedLines(branch.getId(), RECEIVED_STATUSES)) {
-			stock.computeIfAbsent(line.chickenTypeId(), id -> new BranchStock()).layers.add(line);
-		}
-		UUID excluded = excludedSaleId != null ? excludedSaleId : UUID.randomUUID();
-		for (Object[] row : sales.soldWeightByChickenType(branch.getId(), excluded)) {
-			BranchStock chickenStock = stock.computeIfAbsent((UUID) row[0], id -> new BranchStock());
-			chickenStock.take((BigDecimal) row[1]);
+		for (ReceivedLine line : receipts.receivedLines(branchId, RECEIVED_STATUSES)) {
+			if (receivedBy == null || !line.receivedAt().isAfter(receivedBy)) {
+				stock.computeIfAbsent(line.chickenTypeId(), id -> new BranchStock()).layers.add(line);
+			}
 		}
 		return stock;
+	}
+
+	private static void consume(Map<UUID, BranchStock> stock, List<Object[]> soldRows) {
+		for (Object[] row : soldRows) {
+			stock.computeIfAbsent((UUID) row[0], id -> new BranchStock()).take((BigDecimal) row[1]);
+		}
 	}
 
 	private static final class BranchStock {

@@ -37,8 +37,8 @@ Implemented:
 - Procurement report.
 - Stock by batch report.
 - Distribution report.
-- Branch sales report.
-- Profit and loss report by branch (branch sales minus transfer value).
+- Branch sales report: takings, expected sales, short/over, cost of stock sold and profit per day close.
+- Profit and loss report by branch (takings minus the cost of stock sold).
 - Shrinkage and loss report.
 - Branch settlements report.
 

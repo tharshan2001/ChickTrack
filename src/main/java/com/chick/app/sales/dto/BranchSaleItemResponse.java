@@ -6,6 +6,8 @@ import java.util.UUID;
 public record BranchSaleItemResponse(
 		UUID id,
 		UUID chickenTypeId,
+		BigDecimal openingWeightKg,
+		BigDecimal closingWeightKg,
 		BigDecimal weightKg,
 		BigDecimal sellingPricePerKg,
 		BigDecimal transferPricePerKg,

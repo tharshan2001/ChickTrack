@@ -327,6 +327,8 @@ public class ReportService {
 
 		List<SalesReportRow> rows = new ArrayList<>();
 		BigDecimal totalSales = BigDecimal.ZERO;
+		BigDecimal totalExpected = BigDecimal.ZERO;
+		BigDecimal totalVariance = BigDecimal.ZERO;
 		BigDecimal totalCost = BigDecimal.ZERO;
 		BigDecimal totalProfit = BigDecimal.ZERO;
 
@@ -334,11 +336,19 @@ public class ReportService {
 			if (!scope.allows(sale.getBranch().getId())) {
 				continue;
 			}
+			BigDecimal variance = sale.getExpectedSales() == null ? null
+					: sale.getTotalSales().subtract(sale.getExpectedSales());
+			if (variance != null) {
+				totalExpected = totalExpected.add(sale.getExpectedSales());
+				totalVariance = totalVariance.add(variance);
+			}
 			rows.add(new SalesReportRow(
 					sale.getReference(),
 					sale.getSaleDate(),
 					sale.getBranch().getName(),
 					sale.getTotalSales(),
+					sale.getExpectedSales(),
+					variance,
 					sale.getTransferValue(),
 					sale.getBranchProfit(),
 					percent(sale.getBranchProfit(), sale.getTotalSales())));
@@ -349,6 +359,8 @@ public class ReportService {
 
 		Map<String, BigDecimal> totals = new LinkedHashMap<>();
 		totals.put("totalSales", totalSales.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("expectedSales", totalExpected.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
+		totals.put("variance", totalVariance.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		totals.put("transferValue", totalCost.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		totals.put("branchProfit", totalProfit.setScale(MONEY_SCALE, RoundingMode.HALF_UP));
 		totals.put("profitPercent", percent(totalProfit, totalSales));

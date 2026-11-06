@@ -14,14 +14,15 @@ import com.chick.app.branch.repository.BranchRepository;
 import com.chick.app.chicken.domain.ChickenType;
 import com.chick.app.chicken.repository.ChickenTypeRepository;
 import com.chick.app.common.exception.BusinessException;
+import com.chick.app.common.exception.ResourceNotFoundException;
 import com.chick.app.common.service.DocumentNumberService;
 import com.chick.app.distribution.repository.BranchReceiptRepository;
 import com.chick.app.distribution.repository.ReceivedLine;
 import com.chick.app.identity.security.BranchAccessService;
-import com.chick.app.payment.service.SettlementService;
 import com.chick.app.pricing.dto.DailyPriceResponse;
 import com.chick.app.pricing.service.DailyPriceService;
 import com.chick.app.sales.domain.BranchSale;
+import com.chick.app.sales.domain.BranchSaleItem;
 import com.chick.app.sales.dto.BranchSaleCreateRequest;
 import com.chick.app.sales.dto.BranchSaleItemRequest;
 import com.chick.app.sales.mapper.BranchSaleMapper;
@@ -47,110 +48,168 @@ class BranchSaleServiceTest {
 	private final DailyPriceService dailyPrices = mock(DailyPriceService.class);
 	private final DocumentNumberService documentNumbers = mock(DocumentNumberService.class);
 	private final BranchReceiptRepository receipts = mock(BranchReceiptRepository.class);
-	private final SettlementService settlements = mock(SettlementService.class);
 
 	private BranchSaleService service;
 	private Branch branch;
-	private ChickenType chickenType;
+	private ChickenType broiler;
 	private final List<ReceivedLine> received = new ArrayList<>();
-	private final List<Object[]> soldElsewhere = new ArrayList<>();
+	private final List<Object[]> soldBefore = new ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
 		service = new BranchSaleService(sales, branches, chickenTypes, dailyPrices, mock(BranchSaleMapper.class),
-				documentNumbers, mock(BranchAccessService.class), receipts, settlements);
+				documentNumbers, mock(BranchAccessService.class), receipts);
 
 		branch = new Branch();
 		branch.setId(UUID.randomUUID());
-		chickenType = new ChickenType();
-		chickenType.setId(UUID.randomUUID());
-		chickenType.setName("Broiler");
+		broiler = chickenType("Broiler");
 
 		when(branches.findById(branch.getId())).thenReturn(Optional.of(branch));
 		when(branches.lockById(branch.getId())).thenReturn(Optional.of(branch));
-		when(chickenTypes.findById(chickenType.getId())).thenReturn(Optional.of(chickenType));
 		when(documentNumbers.next("BRANCH_SALE", "SALE")).thenReturn("SALE-2026-000001");
 		when(sales.save(any(BranchSale.class))).thenAnswer(invocation -> invocation.getArgument(0));
 		when(sales.findByBranchAndSaleDate(eq(branch), any(LocalDate.class))).thenReturn(Optional.empty());
+		when(sales.findFirstByBranchIdAndSaleDateAfterOrderBySaleDateDesc(eq(branch.getId()), any()))
+				.thenReturn(Optional.empty());
 		when(receipts.receivedLines(eq(branch.getId()), any())).thenReturn(received);
-		when(sales.soldWeightByChickenType(eq(branch.getId()), any())).thenReturn(soldElsewhere);
-		when(settlements.settledAmount(any())).thenReturn(BigDecimal.ZERO);
-		when(dailyPrices.current(eq(chickenType.getId()), eq(branch.getId()), any(), any()))
-				.thenReturn(new DailyPriceResponse(
-						UUID.randomUUID(), chickenType.getId(), branch.getId(), null,
-						new BigDecimal("830.0000"), new BigDecimal("1000.0000"), Instant.now(), Instant.now()));
+		when(sales.soldWeightBefore(eq(branch.getId()), any())).thenReturn(soldBefore);
+		price(broiler, "1000.0000");
 	}
 
 	@Test
-	void marksBranchProfitAgainstTransferPrice() {
-		receive("400.000", "900.0000");
+	void soldWeightIsOpeningMinusClosingAndProfitIsTakingsMinusItsCost() {
+		receive(broiler, "100.000", "900.0000");
 
-		BranchSale sale = record("100.000");
+		BranchSale sale = close("68000", line(broiler, "30.000"));
 
+		BranchSaleItem item = sale.getItems().get(0);
 		assertThat(sale.getReference()).isEqualTo("SALE-2026-000001");
-		assertThat(sale.getItems().get(0).getSellingPricePerKg()).isEqualByComparingTo("1000.0000");
-		assertThat(sale.getItems().get(0).getTransferPricePerKg()).isEqualByComparingTo("900.0000");
-		assertThat(sale.getTotalSales()).isEqualByComparingTo("100000.00");
-		assertThat(sale.getTransferValue()).isEqualByComparingTo("90000.00");
-		assertThat(sale.getBranchProfit()).isEqualByComparingTo("10000.00");
+		assertThat(item.getOpeningWeightKg()).isEqualByComparingTo("100.000");
+		assertThat(item.getClosingWeightKg()).isEqualByComparingTo("30.000");
+		assertThat(item.getWeightKg()).isEqualByComparingTo("70.000");
+		assertThat(item.getTransferPricePerKg()).isEqualByComparingTo("900.0000");
+		assertThat(sale.getTotalSales()).isEqualByComparingTo("68000.00");
+		assertThat(sale.getTransferValue()).isEqualByComparingTo("63000.00");
+		assertThat(sale.getBranchProfit()).isEqualByComparingTo("5000.00");
+		// Expected at the branch price: 70 kg x 1000 = 70,000, so the branch is 2,000 short.
+		assertThat(sale.getExpectedSales()).isEqualByComparingTo("70000.00");
 	}
 
 	@Test
-	void costsTheSaleAgainstTheOldestStockStillHeld() {
-		receive("100.000", "900.0000");
-		receive("100.000", "950.0000");
-		soldElsewhere.add(new Object[] {chickenType.getId(), new BigDecimal("80.000")});
+	void costsTheSoldWeightAgainstTheOldestStockStillHeld() {
+		receive(broiler, "100.000", "900.0000");
+		receive(broiler, "100.000", "950.0000");
+		soldBefore.add(new Object[] {broiler.getId(), new BigDecimal("80.000")});
 
-		BranchSale sale = record("50.000");
+		// Opening 120 kg (20 of the 900 layer, 100 of the 950 layer); 70 left, so 50 sold.
+		BranchSale sale = close("50000", line(broiler, "70.000"));
 
-		// 20 kg left of the 900 layer, then 30 kg of the 950 layer.
+		assertThat(sale.getItems().get(0).getOpeningWeightKg()).isEqualByComparingTo("120.000");
 		assertThat(sale.getTransferValue()).isEqualByComparingTo("46500.00");
 		assertThat(sale.getItems().get(0).getTransferPricePerKg()).isEqualByComparingTo("930.0000");
 	}
 
 	@Test
-	void linesForTheSameChickenTypeShareTheStock() {
-		receive("100.000", "900.0000");
+	void stockReceivedAfterTheDayIsNotPartOfItsOpeningStock() {
+		receive(broiler, "100.000", "900.0000");
+		received.add(new ReceivedLine(broiler.getId(), Instant.parse("2026-01-20T05:00:00Z"),
+				new BigDecimal("50.000"), new BigDecimal("950.0000")));
 
-		assertThatThrownBy(() -> service.record(new BranchSaleCreateRequest(branch.getId(), DAY, null, List.of(
-				new BranchSaleItemRequest(chickenType.getId(), new BigDecimal("60.000")),
-				new BranchSaleItemRequest(chickenType.getId(), new BigDecimal("60.000"))))))
-				.isInstanceOf(BusinessException.class)
-				.hasMessageContaining("available to sell");
+		BranchSale sale = close("10000", line(broiler, "90.000"));
+
+		assertThat(sale.getItems().get(0).getOpeningWeightKg()).isEqualByComparingTo("100.000");
+		assertThat(sale.getItems().get(0).getWeightKg()).isEqualByComparingTo("10.000");
 	}
 
 	@Test
-	void rejectsSellingMoreThanTheBranchHasInStock() {
-		receive("50.000", "900.0000");
+	void rejectsAClosingStockAboveWhatTheBranchHeld() {
+		receive(broiler, "50.000", "900.0000");
 
-		assertThatThrownBy(() -> record("100.000"))
+		assertThatThrownBy(() -> close("1000", line(broiler, "60.000")))
 				.isInstanceOf(BusinessException.class)
-				.hasMessageContaining("available to sell");
-	}
-
-	@Test
-	void reRecordingCannotDropBelowTheAmountAlreadySettled() {
-		receive("400.000", "900.0000");
-		BranchSale existing = new BranchSale();
-		existing.setId(UUID.randomUUID());
-		existing.setReference("SALE-2026-000009");
-		when(sales.findByBranchAndSaleDate(eq(branch), eq(DAY))).thenReturn(Optional.of(existing));
-		when(settlements.settledAmount(existing.getId())).thenReturn(new BigDecimal("90000.00"));
-
-		assertThatThrownBy(() -> record("50.000"))
-				.isInstanceOf(BusinessException.class)
-				.hasMessageContaining("already have 90000.00 settled");
+				.satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("CLOSING_ABOVE_STOCK"));
 		verify(sales, never()).save(any());
 	}
 
-	private void receive(String weight, String transferPrice) {
-		received.add(new ReceivedLine(chickenType.getId(), Instant.parse("2026-01-01T00:00:00Z").plusSeconds(received.size()),
+	@Test
+	void everyChickenTypeWithStockNeedsAClosingCount() {
+		ChickenType country = chickenType("Country chicken");
+		receive(broiler, "50.000", "900.0000");
+		receive(country, "10.000", "1500.0000");
+
+		assertThatThrownBy(() -> close("1000", line(broiler, "40.000")))
+				.isInstanceOf(BusinessException.class)
+				.hasMessageContaining("Country chicken");
+	}
+
+	@Test
+	void onlyTheLatestDayCanBeChanged() {
+		receive(broiler, "50.000", "900.0000");
+		BranchSale later = new BranchSale();
+		later.setSaleDate(DAY.plusDays(1));
+		when(sales.findFirstByBranchIdAndSaleDateAfterOrderBySaleDateDesc(branch.getId(), DAY))
+				.thenReturn(Optional.of(later));
+
+		assertThatThrownBy(() -> close("1000", line(broiler, "40.000")))
+				.isInstanceOf(BusinessException.class)
+				.hasMessageContaining("only the latest day");
+		verify(sales, never()).save(any());
+	}
+
+	@Test
+	void expectedSalesAreUnknownWhenASoldTypeHasNoPrice() {
+		ChickenType country = chickenType("Country chicken");
+		receive(country, "10.000", "1500.0000");
+		when(dailyPrices.current(eq(country.getId()), eq(branch.getId()), any(), any()))
+				.thenThrow(new ResourceNotFoundException("DailyPrice", "current price"));
+
+		BranchSale sale = close("9000", line(country, "5.000"));
+
+		assertThat(sale.getExpectedSales()).isNull();
+		assertThat(sale.getItems().get(0).getSellingPricePerKg()).isNull();
+		assertThat(sale.getBranchProfit()).isEqualByComparingTo("1500.00");
+	}
+
+	@Test
+	void savingTheSameDayAgainKeepsItsReference() {
+		receive(broiler, "50.000", "900.0000");
+		BranchSale existing = new BranchSale();
+		existing.setId(UUID.randomUUID());
+		existing.setReference("SALE-2026-000009");
+		when(sales.findByBranchAndSaleDate(branch, DAY)).thenReturn(Optional.of(existing));
+
+		BranchSale sale = close("9000", line(broiler, "40.000"));
+
+		assertThat(sale.getReference()).isEqualTo("SALE-2026-000009");
+		verify(documentNumbers, never()).next(any(), any());
+	}
+
+	private ChickenType chickenType(String name) {
+		ChickenType type = new ChickenType();
+		type.setId(UUID.randomUUID());
+		type.setName(name);
+		when(chickenTypes.findById(type.getId())).thenReturn(Optional.of(type));
+		return type;
+	}
+
+	private void price(ChickenType type, String sellingPrice) {
+		when(dailyPrices.current(eq(type.getId()), eq(branch.getId()), any(), any()))
+				.thenReturn(new DailyPriceResponse(
+						UUID.randomUUID(), type.getId(), branch.getId(), null,
+						new BigDecimal("830.0000"), new BigDecimal(sellingPrice), Instant.now(), Instant.now()));
+	}
+
+	private void receive(ChickenType type, String weight, String transferPrice) {
+		received.add(new ReceivedLine(type.getId(), Instant.parse("2026-01-01T00:00:00Z").plusSeconds(received.size()),
 				new BigDecimal(weight), new BigDecimal(transferPrice)));
 	}
 
-	private BranchSale record(String weight) {
-		service.record(new BranchSaleCreateRequest(branch.getId(), DAY, null,
-				List.of(new BranchSaleItemRequest(chickenType.getId(), new BigDecimal(weight)))));
+	private static BranchSaleItemRequest line(ChickenType type, String closingWeight) {
+		return new BranchSaleItemRequest(type.getId(), new BigDecimal(closingWeight));
+	}
+
+	private BranchSale close(String totalSales, BranchSaleItemRequest... lines) {
+		service.record(new BranchSaleCreateRequest(branch.getId(), DAY, new BigDecimal(totalSales), null, List.of(lines)));
 		ArgumentCaptor<BranchSale> captor = ArgumentCaptor.forClass(BranchSale.class);
 		verify(sales).save(captor.capture());
 		return captor.getValue();

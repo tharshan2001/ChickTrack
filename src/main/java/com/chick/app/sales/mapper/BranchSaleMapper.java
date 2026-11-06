@@ -11,6 +11,7 @@ import org.mapstruct.Mapping;
 public interface BranchSaleMapper {
 
 	@Mapping(target = "branchId", source = "branch.id")
+	@Mapping(target = "variance", expression = "java(sale.getExpectedSales() == null ? null : sale.getTotalSales().subtract(sale.getExpectedSales()))")
 	BranchSaleResponse toResponse(BranchSale sale);
 
 	@Mapping(target = "chickenTypeId", source = "chickenType.id")

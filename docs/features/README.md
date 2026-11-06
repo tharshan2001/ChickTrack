@@ -13,8 +13,8 @@ The end-to-end business logic and flow is documented in [Business Flow](../busin
 | Procurement and receiving | Planned | [procurement.md](procurement.md) |
 | Inventory and batches | Planned | [inventory.md](inventory.md) |
 | Distribution and branch receiving | Planned | [distribution.md](distribution.md) |
-| Branch sales and profit marking | Implemented | [branch-sales.md](branch-sales.md) |
-| Payments and settlements | Planned | [finance.md](finance.md) |
+| Day close (takings + closing stock) and profit marking | Implemented | [branch-sales.md](branch-sales.md) |
+| Payments and settlements (against received deliveries) | Implemented | [finance.md](finance.md) |
 | Dashboard and reports | Implemented | [reports.md](reports.md) |
 | Audit and idempotency | Foundation ready | [audit-and-idempotency.md](audit-and-idempotency.md) |
 

@@ -10,7 +10,7 @@ This document is the single reference for how ChickTrack works end to end: who d
 | `PROCUREMENT_MANAGER` | Suppliers, purchase prices, procurement | `/procurements`, `/suppliers`, `/daily-prices` |
 | `WAREHOUSE_MANAGER` | Stock, batches, adjustments | `/stock-batches`, `/inventory-movements`, `/stock-adjustments` |
 | `DISTRIBUTION_MANAGER` | Distribution, dispatch, reversal | `/distributions` |
-| `BRANCH_RECEIVER` | Branch receiving and daily sales entry | `/distributions/{id}/receipts`, `/branch-sales` |
+| `BRANCH_RECEIVER` | Branch receiving and the daily close | `/distributions/{id}/receipts`, `/branch-sales` |
 | `ACCOUNTANT` | Settlements, balances, reports | `/branch-settlements`, `/reports/*`, `/dashboard` |
 | `VIEWER` | Read-only reporting | `/reports/*`, `/dashboard` |
 | `DRIVER` | Delivery confirmation | (delivery module pending) |
@@ -37,11 +37,11 @@ Warehouse stock (batches, remaining weight, FIFO)
    |
 Distribution to branch (transfer price = landed cost + our margin + expenses)
    |
-Branch receiving (weight confirmed, discrepancy recorded as loss)
+Branch receiving (weight confirmed, discrepancy recorded as loss)  --> branch owes received kg x T
    |
-Branch sales (weight sold per chicken type, branch price)  --> branch profit marked
+Day close (takings + stock left per type; sold = opening - closing)  --> branch profit, short/over
    |
-Branch settlement (branch pays the transfer value)
+Branch settlement (branch pays its received deliveries, oldest first)
    |
 Dashboard and reports (CSV / PDF export)
 ```
@@ -62,7 +62,7 @@ purchase price (typed at purchase)          P
 
 - Our profit per kg = `M` (distribution expenses are passed through in `T`).
 - Branch profit per kg = `S - T`.
-- What the branch owes = `T x weight` (the transfer value).
+- What the branch owes = `T x received weight` of each delivery, from the moment it is received.
 
 ## 3. Step-by-Step Business Logic
 
@@ -87,7 +87,7 @@ purchase price (typed at purchase)          P
 - A daily price row stores the purchase price per kg, the selling price per kg, and an `effectiveFrom` instant.
 - A price can be global, per branch (the branch-set selling price), or per supplier.
 - Prices are effective dated: saved transactions snapshot the price they used, so later price changes never rewrite history.
-- The branch selling price in this list is the price applied when the branch records its sales.
+- The branch selling price in this list gives the expected sales of a day close (sold weight x price); it does not change what the branch owes.
 
 ### 3.3b Company Margin Rules
 
@@ -148,33 +148,34 @@ The warehouse sends stock to a branch.
 - Every dispatched line must be confirmed exactly once; a fully lost line is recorded as `0` received with a reason.
 - Received weight cannot exceed the dispatched weight.
 - Any discrepancy is written to the ledger as a `LOSS` movement and shows up as shrinkage in the reports.
-- After receiving, the distribution is `RECEIVED`.
+- After receiving, the distribution is `RECEIVED` and the branch owes `received weight x transfer price` for each line.
 - A dispatched distribution can be reversed: the full weight returns to the batches with a `REVERSAL` movement.
-- A received distribution can be reversed only while the branch still holds the received weight (nothing sold from it). Only the received weight returns to the batches; recorded discrepancies stay as losses.
+- A received distribution can be reversed only while no payment is allocated to it and the branch still holds the received weight (no closed day used it). Only the received weight returns to the batches; recorded discrepancies stay as losses.
 
-### 3.8 Branch Daily Sales and Profit Marking
+### 3.8 Branch Day Close and Profit Marking
 
-The branch records, per day, the weight it sold of each chicken type.
+At the end of each day the branch counts the stock it has left of each chicken type and enters its total takings (Rs).
 
-- Revenue per line = `weight sold × branch selling price` (the daily price set for that branch, chicken type and date; `PRICE_NOT_CONFIGURED` if missing).
-- Cost per line (the transfer value the branch owes us) is taken from the stock the branch still holds, oldest receipt first: weight already sold by other days is consumed first, then this day's weight. `transferPricePerKg` is that cost divided by the weight.
-- Branch profit = `revenue - transfer value`.
-- The branch cannot sell more than it has received minus what it has already sold (`INSUFFICIENT_BRANCH_STOCK`). Several lines for one chicken type share the same stock.
-- Recording the same branch and date again replaces that day's lines and keeps the same reference (`SALE-2026-000001`). It is refused if the new transfer value would fall below the amount already settled for that day; reverse the settlement first.
-- Sales, settlements, receipts and reversals for one branch run one at a time (the branch row is locked).
+- Opening stock per type = weight received by the end of the day (Asia/Colombo) - weight of earlier closed days.
+- Sold weight = opening - closing. It includes any waste; closing above opening is refused (`CLOSING_ABOVE_STOCK`). Every type with stock needs a closing count.
+- Cost of stock sold (`transferValue`) = the sold weight at the transfer price, taken from the oldest receipts still held. `transferPricePerKg` is that cost divided by the weight.
+- Branch profit = `takings - cost of stock sold`.
+- Expected sales = `sold weight x branch selling price` (the daily price for that branch, type and date); short/over (`variance`) = `takings - expected`. Without a price the close still saves and expected is unknown.
+- Saving the same branch and date again replaces that day's lines and keeps the same reference (`SALE-2026-000001`). Only the latest closed day can change, because its closing stock is the next day's opening stock.
+- Day closes, settlements, receipts and reversals for one branch run one at a time (the branch row is locked).
 
 ### 3.9 Branch Settlement
 
 - A settlement records what the branch paid: branch, date, amount, method, reference, notes.
-- Allocations point at the branch sales being paid and must sum to the settlement amount.
-- An allocation cannot exceed the outstanding amount of that sale, and the sale must belong to the settlement's branch.
+- Allocations point at the received deliveries being paid and must sum to the settlement amount. The app allocates oldest delivery first.
+- An allocation cannot exceed what is still owed on that delivery, and the delivery must belong to the settlement's branch and be received.
 - A posted settlement can only be reversed; reversal restores the outstanding balance.
-- Branch outstanding = total entered sales − posted settlements.
+- Branch outstanding = received value of all received deliveries − posted settlements.
 
 ### 3.10 Dashboard and Reports
 
-- Dashboard cards: procurement value and weight, stock weight and value, distribution weight and transfer value, our margin, total sales, branch profit, branch outstanding, shrinkage.
-- Reports: procurement, stock by batch, distribution (transfer value and our margin), sales (revenue, transfer value, branch profit), profit by branch, shrinkage, settlements.
+- Dashboard cards: procurement value and weight, stock weight and value, distribution weight and transfer value, our margin, total sales, branch profit, branch outstanding (received in the period minus paid in the period), shrinkage.
+- Reports: procurement, stock by batch, distribution (transfer value and our margin), sales (takings, expected, short/over, cost of stock sold, branch profit), profit by branch, shrinkage, settlements.
 - Reports read posted data only: draft and reversed procurements and distributions are excluded, reversed settlements are excluded.
 - Exports are generated server-side in CSV or PDF from the same rows and totals the API returns.
 
@@ -186,9 +187,10 @@ The branch records, per day, the weight it sold of each chicken type.
 | Stock value | `stock_batches.remaining_weight_kg × landed_cost_per_kg` |
 | Dispatch value | `distributions.total_cost` and `distributions.total_revenue` |
 | Branch sales | `branch_sales.total_sales` |
-| Branch transfer value | `branch_sales.transfer_value` (sold weight costed against branch stock still held, oldest receipt first) |
-| Branch profit | `branch_sales.branch_profit` = total sales − transfer value |
-| Outstanding | sales transfer value − posted settlement allocations |
+| Branch cost of stock sold | `branch_sales.transfer_value` (opening − closing weight, costed against branch stock still held, oldest receipt first) |
+| Branch profit | `branch_sales.branch_profit` = total sales − cost of stock sold |
+| Short / over | `branch_sales.total_sales − branch_sales.expected_sales` |
+| Outstanding | Σ received weight × transfer price of received deliveries − posted settlement allocations |
 | Shrinkage | `inventory_movements` of type `LOSS` / `DAMAGE` |
 
 ## 5. Validations and Error Codes
@@ -199,9 +201,8 @@ The branch records, per day, the weight it sold of each chicken type.
 | `RESOURCE_NOT_FOUND` | Unknown id in the request |
 | `BUSINESS_RULE_VIOLATION` | Rule breach, e.g. allocations not summing to the amount |
 | `INSUFFICIENT_STOCK` | Not enough warehouse stock for a distribution |
-| `OVER_ALLOCATION` | Settlement allocation above the sale transfer value |
-| `INSUFFICIENT_BRANCH_STOCK` | Branch sold more than it received |
-| `PRICE_NOT_CONFIGURED` | No branch selling price for the chicken type and date |
+| `OVER_ALLOCATION` | Settlement allocation above what is still owed on the delivery |
+| `CLOSING_ABOVE_STOCK` | A day close counts more stock than the branch held |
 | `INVALID_STATUS_TRANSITION` | Action not allowed in the current status |
 | `FORBIDDEN` | Branch outside the authenticated user's scope, or role not allowed |
 | `CONCURRENT_MODIFICATION` | The record changed in another request; reload and retry |

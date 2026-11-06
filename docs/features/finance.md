@@ -6,7 +6,7 @@ Implemented.
 
 ## Purpose
 
-Track the money a branch pays back for the sales it entered, so outstanding branch balances are visible.
+Track the money a branch pays for the stock it received, so outstanding branch balances are visible.
 
 ## Actors
 
@@ -15,13 +15,15 @@ Track the money a branch pays back for the sales it entered, so outstanding bran
 
 ## Rules
 
-- Settlements are allocated against the daily branch sales they pay for.
-- An allocation cannot exceed the transfer value of that branch sale (what the branch owes us).
+- A branch owes us when it receives a delivery: received weight x transfer price of each line.
+- Settlements are allocated against the received deliveries they pay for, oldest first in the app.
+- An allocation cannot exceed what is still owed on that delivery.
 - Allocations must sum to the settlement amount.
-- The branch sale must belong to the settlement's branch.
+- The delivery must belong to the settlement's branch and be received.
+- A delivery with payments against it cannot be reversed until the payments are reversed.
 - Settlements are immutable once posted; corrections use reversal records.
 - Overpayment is rejected.
-- Balances are calculated from posted allocations: transfer value of entered sales minus posted settlements.
+- Balances are calculated from posted allocations: received value of deliveries minus posted settlements.
 
 ## Branch Settlements
 
@@ -30,7 +32,7 @@ Track the money a branch pays back for the sales it entered, so outstanding bran
 - Amount
 - Method
 - Reference
-- Allocations to branch sales
+- Allocations to received deliveries
 
 ## Data
 
@@ -46,11 +48,12 @@ Implemented:
 - `GET /api/v1/branch-settlements/{id}`
 - `POST /api/v1/branch-settlements/{id}/reverse`
 - `GET /api/v1/branches/{id}/balance`
+- `GET /api/v1/branches/{id}/open-deliveries`
 
 See [Finance API](../api/finance.md).
 
 ## Acceptance Criteria
 
-- Outstanding balances match entered sales minus posted settlements.
+- Outstanding balances match received deliveries minus posted settlements.
 - Over-allocation is rejected.
 - Reversals restore balances.

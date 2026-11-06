@@ -108,17 +108,15 @@ public class DashboardService {
 			distributionWeight = distributionWeight.add(distribution.getTotalWeightKg());
 			distributionTransferValue = distributionTransferValue.add(distribution.getTotalTransferValue());
 			ourMargin = ourMargin.add(distribution.getTotalOurMargin());
-		}
-
-		Specification<BranchSale> allSalesSpec = (root, query, cb) -> cb.and(
-				cb.greaterThanOrEqualTo(root.get("saleDate"), effectiveFrom),
-				cb.lessThanOrEqualTo(root.get("saleDate"), effectiveTo));
-		if (branchId != null) {
-			allSalesSpec = allSalesSpec.and((root, query, cb) -> cb.equal(root.get("branch").get("id"), branchId));
-		}
-		for (BranchSale sale : branchSales.findAll(allSalesSpec)) {
-			if (scope.allows(sale.getBranch().getId())) {
-				outstandingTransferValue = outstandingTransferValue.add(sale.getTransferValue());
+			// A branch owes us for what it received: received weight x transfer price of the line.
+			if (distribution.getStatus() != com.chick.app.distribution.domain.DistributionStatus.DISPATCHED) {
+				for (var receipt : distribution.getReceipts()) {
+					for (var receiptItem : receipt.getItems()) {
+						outstandingTransferValue = outstandingTransferValue.add(receiptItem.getReceivedWeightKg()
+								.multiply(receiptItem.getDistributionItem().getTransferPricePerKg())
+								.setScale(2, java.math.RoundingMode.HALF_UP));
+					}
+				}
 			}
 		}
 

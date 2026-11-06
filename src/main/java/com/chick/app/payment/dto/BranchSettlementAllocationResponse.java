@@ -5,6 +5,6 @@ import java.util.UUID;
 
 public record BranchSettlementAllocationResponse(
 		UUID id,
-		UUID branchSaleId,
+		UUID distributionId,
 		BigDecimal amount) {
 }

@@ -2,31 +2,44 @@ package com.chick.app.sales.repository;
 
 import com.chick.app.branch.domain.Branch;
 import com.chick.app.sales.domain.BranchSale;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface BranchSaleRepository
 		extends JpaRepository<BranchSale, UUID>, JpaSpecificationExecutor<BranchSale> {
 
 	Optional<BranchSale> findByBranchAndSaleDate(Branch branch, LocalDate saleDate);
 
-	/** Sold weight per chicken type for a branch, leaving out one sale (pass a random id to keep all). */
-	@org.springframework.data.jpa.repository.Query("""
+	/** Weight that left the branch per chicken type on days closed before {@code date}. */
+	@Query("""
 			select item.chickenType.id, sum(item.weightKg)
 			from BranchSaleItem item
-			where item.branchSale.branch.id = :branchId and item.branchSale.id <> :excludedSaleId
+			where item.branchSale.branch.id = :branchId and item.branchSale.saleDate < :date
 			group by item.chickenType.id
 			""")
-	java.util.List<Object[]> soldWeightByChickenType(
-			@org.springframework.data.repository.query.Param("branchId") java.util.UUID branchId,
-			@org.springframework.data.repository.query.Param("excludedSaleId") java.util.UUID excludedSaleId);
+	List<Object[]> soldWeightBefore(@Param("branchId") UUID branchId, @Param("date") LocalDate date);
 
-	@org.springframework.data.jpa.repository.Query(
-			"select coalesce(sum(s.transferValue), 0) from BranchSale s where s.branch.id = :branchId")
-	java.math.BigDecimal totalTransferValue(@org.springframework.data.repository.query.Param("branchId") java.util.UUID branchId);
+	/** Weight that left the branch per chicken type on every closed day. */
+	@Query("""
+			select item.chickenType.id, sum(item.weightKg)
+			from BranchSaleItem item
+			where item.branchSale.branch.id = :branchId
+			group by item.chickenType.id
+			""")
+	List<Object[]> soldWeight(@Param("branchId") UUID branchId);
 
-	java.util.List<BranchSale> findByBranchIdOrderBySaleDateAsc(java.util.UUID branchId);
+	/** Latest closed day of a branch after {@code date}, if any. */
+	Optional<BranchSale> findFirstByBranchIdAndSaleDateAfterOrderBySaleDateDesc(UUID branchId, LocalDate date);
+
+	List<BranchSale> findByBranchIdOrderBySaleDateAsc(UUID branchId);
+
+	@Query("select coalesce(sum(s.totalSales), 0) from BranchSale s where s.branch.id = :branchId")
+	BigDecimal totalSales(@Param("branchId") UUID branchId);
 }

@@ -12,8 +12,8 @@ Creates, for the last DAYS days (default 92):
   * weekly buying and selling prices (Colombo sells a little higher), margins per product
   * daily purchases with commission and transport, a few stock adjustments
   * daily dispatches to each open branch: draft -> dispatched -> received (with the odd shortfall)
-  * daily branch sales and payments every few days
-  * today: a draft holding stock, a load on the way, sales not entered at one branch, money owed
+  * a day close per branch (closing stock + takings) and payments against deliveries every few days
+  * today: a draft holding stock, a load on the way, one branch not closed yet, money owed
 
 Run it once against an empty database (it stops if purchases already exist; pass --force to add
 more anyway). Only the Python standard library is used.
@@ -191,7 +191,6 @@ def main():
     api("POST", "/company-margin-rules", {"chickenTypeId": P["broiler"]["id"], "branchId": None, "markupPercent": "12", "effectiveFrom": day_start(start + dt.timedelta(days=45))})
 
     buy_today = {}
-    open_sales = {code: [] for code in B}  # (sale id, outstanding Decimal), oldest first
     totals = {"purchases": 0, "dispatches": 0, "sales": 0, "payments": 0, "adjustments": 0}
     total_days = (today - start).days + 1
 
@@ -304,36 +303,40 @@ def main():
                         api("POST", f"/distributions/{dist['id']}/receipts",
                             {"receivedAt": at(d, 7, rnd.randint(5, 55)), "notes": None, "items": lines})
 
-            # Sales: most of what the branch holds (Gampaha hasn't entered today's yet).
+            # Day close: the branch counts what is left and enters its takings (Gampaha hasn't closed today yet).
             if is_today and code == "GMP":
                 continue
-            held = api("GET", f"/branches/{br['id']}/stock")
-            sale_items = []
-            for x in held:
+            opening = api("GET", f"/branches/{br['id']}/stock", params={"date": d.isoformat()})
+            close_items = []
+            for x in opening:
                 have = Decimal(x["availableWeightKg"])
-                if have >= 3:
-                    sale_items.append({"chickenTypeId": x["chickenTypeId"],
-                                       "weightKg": kg((have * Decimal(rnd.uniform(0.78, 0.96))).quantize(Decimal("0.5")))})
-            if sale_items:
-                sale = api("POST", "/branch-sales", {"branchId": br["id"], "saleDate": d.isoformat(), "notes": None, "items": sale_items})
-                open_sales[code].append([sale["id"], Decimal(sale["transferValue"])])
+                if have <= 0:
+                    continue
+                left = have if have < 3 else min(have, (have * Decimal(rnd.uniform(0.04, 0.22))).quantize(Decimal("0.5")))
+                close_items.append({"chickenTypeId": x["chickenTypeId"], "closingWeightKg": kg(left)})
+            if close_items:
+                body = {"branchId": br["id"], "saleDate": d.isoformat(), "notes": None, "totalSales": "0", "items": close_items}
+                sale = api("POST", "/branch-sales", body)
+                # Takings land near the expected figure at the branch price: usually a little short, sometimes over.
+                expected = Decimal(sale["expectedSales"] or sale["transferValue"])
+                body["totalSales"] = money((expected * Decimal(rnd.uniform(0.97, 1.01))).quantize(Decimal("0.01")))
+                api("POST", "/branch-sales", body)
                 totals["sales"] += 1
 
-            # Payments every 3 days (Colombo pays weekly, so it carries a bigger balance).
+            # Payments every 3 days (Colombo pays weekly, so it carries a bigger balance), oldest delivery first.
             every = 7 if code == "CMB" else 3
-            if open_sales[code] and (i % every == every - 1) and not is_today:
-                owed = sum(s[1] for s in open_sales[code])
+            if (i % every == every - 1) and not is_today:
+                open_deliveries = api("GET", f"/branches/{br['id']}/open-deliveries")
+                owed = sum(Decimal(o["outstandingAmount"]) for o in open_deliveries)
                 pay = (owed * Decimal(rnd.uniform(0.8, 1.0))).quantize(Decimal("0.01"))
                 allocations, left = [], pay
-                for s in open_sales[code]:
+                for o in open_deliveries:
                     if left <= 0:
                         break
-                    part = min(left, s[1])
+                    part = min(left, Decimal(o["outstandingAmount"]))
                     if part > 0:
-                        allocations.append({"branchSaleId": s[0], "amount": money(part)})
-                        s[1] -= part
+                        allocations.append({"distributionId": o["distributionId"], "amount": money(part)})
                         left -= part
-                open_sales[code] = [s for s in open_sales[code] if s[1] > 0]
                 if allocations:
                     api("POST", "/branch-settlements", {
                         "branchId": br["id"], "settlementDate": d.isoformat(),

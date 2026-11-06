@@ -9,10 +9,10 @@ public interface BranchSettlementRepository extends JpaRepository<BranchSettleme
 
 	@org.springframework.data.jpa.repository.Query("""
 			select coalesce(sum(a.amount), 0) from BranchSettlementAllocation a
-			where a.branchSale.id = :saleId and a.branchSettlement.status = :status
+			where a.distribution.id = :distributionId and a.branchSettlement.status = :status
 			""")
-	java.math.BigDecimal allocatedToSale(
-			@org.springframework.data.repository.query.Param("saleId") UUID saleId,
+	java.math.BigDecimal allocatedToDistribution(
+			@org.springframework.data.repository.query.Param("distributionId") UUID distributionId,
 			@org.springframework.data.repository.query.Param("status") BranchSettlement.Status status);
 
 	@org.springframework.data.jpa.repository.Query("""
@@ -23,13 +23,13 @@ public interface BranchSettlementRepository extends JpaRepository<BranchSettleme
 			@org.springframework.data.repository.query.Param("branchId") UUID branchId,
 			@org.springframework.data.repository.query.Param("status") BranchSettlement.Status status);
 
-	/** Posted allocations per sale for a branch: rows of (sale id, amount). */
+	/** Posted allocations per delivery for a branch: rows of (distribution id, amount). */
 	@org.springframework.data.jpa.repository.Query("""
-			select a.branchSale.id, coalesce(sum(a.amount), 0) from BranchSettlementAllocation a
+			select a.distribution.id, coalesce(sum(a.amount), 0) from BranchSettlementAllocation a
 			where a.branchSettlement.branch.id = :branchId and a.branchSettlement.status = :status
-			group by a.branchSale.id
+			group by a.distribution.id
 			""")
-	java.util.List<Object[]> allocatedBySale(
+	java.util.List<Object[]> allocatedByDistribution(
 			@org.springframework.data.repository.query.Param("branchId") UUID branchId,
 			@org.springframework.data.repository.query.Param("status") BranchSettlement.Status status);
 }

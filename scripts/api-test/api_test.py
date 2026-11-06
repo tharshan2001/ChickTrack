@@ -295,37 +295,49 @@ def main():
     expect(A, "Colombo receiver asking for Kandy -> 403", cr.call("GET", "/distributions", params={"branchId": kandy["id"]}), 403)
     expect(A, "get", dist.call("GET", f"/distributions/{d1['id']}"), 200)
 
-    # ---------------------------------------------------------------- sales
-    A = "Branch sales"
-    sbody = {"branchId": kandy["id"], "saleDate": TODAY, "notes": "Counter",
-             "items": [{"chickenTypeId": broiler["id"], "weightKg": "200"}]}
-    expect(A, "Colombo receiver cannot record Kandy -> 403", cr.call("POST", "/branch-sales", sbody), 403, "FORBIDDEN")
-    expect(A, "sell more than held -> 409", kr.call("POST", "/branch-sales", {**sbody, "items": [{"chickenTypeId": broiler["id"], "weightKg": "296"}]}), 409, "INSUFFICIENT_BRANCH_STOCK")
-    expect(A, "no price configured -> 409/400", kr.call("POST", "/branch-sales", {**sbody, "items": [{"chickenTypeId": layer["id"], "weightKg": "1"}]}), 409, "INSUFFICIENT_BRANCH_STOCK")
-    sale = data(expect(A, "record 200 kg", kr.call("POST", "/branch-sales", sbody), 201))
+    # ---------------------------------------------------------------- day close (branch sales)
+    # The branch enters its takings for the day and the stock it has left; sold kg = opening - closing.
+    A = "Day close"
+    sbody = {"branchId": kandy["id"], "saleDate": TODAY, "notes": "Counter", "totalSales": "200000",
+             "items": [{"chickenTypeId": broiler["id"], "closingWeightKg": "95"}]}
+    opening = data(expect(A, "opening stock for the day", kr.call("GET", f"/branches/{kandy['id']}/stock", params={"date": TODAY}), 200))
+    check(A, "opening 295 kg Broiler", opening and {r["chickenTypeId"]: r["availableWeightKg"] for r in opening}.get(broiler["id"]) == "295.000", opening)
+    expect(A, "Colombo receiver cannot close Kandy -> 403", cr.call("POST", "/branch-sales", sbody), 403, "FORBIDDEN")
+    expect(A, "closing above stock -> 409", kr.call("POST", "/branch-sales", {**sbody, "items": [{"chickenTypeId": broiler["id"], "closingWeightKg": "296"}]}), 409, "CLOSING_ABOVE_STOCK")
+    expect(A, "missing closing count -> 400", kr.call("POST", "/branch-sales", {**sbody, "items": [{"chickenTypeId": layer["id"], "closingWeightKg": "0"}]}), 400, "VALIDATION_FAILED")
+    expect(A, "no total -> 400", kr.call("POST", "/branch-sales", {k: v for k, v in sbody.items() if k != "totalSales"}), 400, "VALIDATION_FAILED")
+    sale = data(expect(A, "close day: 95 kg left, Rs 200,000 taken", kr.call("POST", "/branch-sales", sbody), 201))
     if sale:
-        check(A, "revenue 200000", float(sale["totalSales"]) == 200000, sale["totalSales"])
-        check(A, "transfer value 182400 (912/kg)", float(sale["transferValue"]) == 182400, sale["transferValue"])
+        check(A, "sold 200 kg", float(sale["items"][0]["weightKg"]) == 200, sale["items"][0])
+        check(A, "total sales 200000", float(sale["totalSales"]) == 200000, sale["totalSales"])
+        check(A, "cost of stock sold 182400 (912/kg)", float(sale["transferValue"]) == 182400, sale["transferValue"])
         check(A, "branch profit 17600", float(sale["branchProfit"]) == 17600, sale["branchProfit"])
-    again = data(expect(A, "re-record same day replaces", kr.call("POST", "/branch-sales", {**sbody, "items": [{"chickenTypeId": broiler["id"], "weightKg": "210"}]}), 201))
+        check(A, "expected 200000, variance 0", float(sale["expectedSales"]) == 200000 and float(sale["variance"]) == 0, sale)
+    again = data(expect(A, "re-close same day replaces", kr.call("POST", "/branch-sales", {**sbody, "totalSales": "205000", "items": [{"chickenTypeId": broiler["id"], "closingWeightKg": "85"}]}), 201))
     check(A, "same reference kept", again and sale and again["reference"] == sale["reference"] and again["id"] == sale["id"])
+    check(A, "short 5000 against 210 kg x 1000", again and float(again["variance"]) == -5000, again and again["variance"])
     stock = data(expect(A, "Kandy stock", kr.call("GET", f"/branches/{kandy['id']}/stock"), 200))
     held = {r["chickenTypeId"]: r["availableWeightKg"] for r in (stock or [])}
-    check(A, "Kandy holds 85 kg Broiler after 210 sold", held.get(broiler["id"]) == "85.000", held)
+    check(A, "Kandy holds 85 kg Broiler (the closing count)", held.get(broiler["id"]) == "85.000", held)
     expect(A, "other branch stock -> 403", cr.call("GET", f"/branches/{kandy['id']}/stock"), 403)
     expect(A, "list own", kr.call("GET", "/branch-sales"), 200)
     lst = data(cr.call("GET", "/branch-sales"))
     check(A, "other branch sees none", lst and lst["totalElements"] == 0)
     expect(A, "other branch get -> 403", cr.call("GET", f"/branch-sales/{sale['id']}"), 403)
-    expect(A, "reverse received distribution after sale -> 409", dist.call("POST", f"/distributions/{d1['id']}/reverse", {"reason": "x"}), 409, "BUSINESS_RULE_VIOLATION")
+    expect(A, "reverse received distribution after day close -> 409", dist.call("POST", f"/distributions/{d1['id']}/reverse", {"reason": "x"}), 409, "BUSINESS_RULE_VIOLATION")
 
     # ---------------------------------------------------------------- settlements
+    # The branch owes on receipt: 295 kg x 912 = 269,040. Payments are allocated to deliveries.
     A = "Settlements"
+    OWED = 269040
+    bal = data(expect(A, "Kandy balance after receipt", kr.call("GET", f"/branches/{kandy['id']}/balance"), 200))
+    check(A, f"owes {OWED} (received kg x transfer price)", bal and float(bal["outstandingAmount"]) == OWED, bal)
     stbody = {"branchId": kandy["id"], "settlementDate": TODAY, "amount": "100000.00", "method": "BANK", "reference": "TX1",
-              "allocations": [{"branchSaleId": sale["id"], "amount": "100000.00"}]}
+              "allocations": [{"distributionId": d1["id"], "amount": "100000.00"}]}
     expect(A, "receiver cannot settle -> 403", kr.call("POST", "/branch-settlements", stbody), 403)
     expect(A, "allocations must sum -> 400", acc.call("POST", "/branch-settlements", {**stbody, "amount": "90000.00"}), 400, "BUSINESS_RULE_VIOLATION")
-    expect(A, "over-allocation -> 409", acc.call("POST", "/branch-settlements", {**stbody, "amount": "999999.00", "allocations": [{"branchSaleId": sale["id"], "amount": "999999.00"}]}), 409, "OVER_ALLOCATION")
+    expect(A, "over-allocation -> 409", acc.call("POST", "/branch-settlements", {**stbody, "amount": "999999.00", "allocations": [{"distributionId": d1["id"], "amount": "999999.00"}]}), 409, "OVER_ALLOCATION")
+    expect(A, "pay a reversed draft -> 409", acc.call("POST", "/branch-settlements", {**stbody, "allocations": [{"distributionId": d2["id"], "amount": "100000.00"}]}), 409, "BUSINESS_RULE_VIOLATION")
     key = str(uuid.uuid4())
     s1 = acc.call("POST", "/branch-settlements", stbody, headers={"Idempotency-Key": key})
     st = data(expect(A, "settle 100000 with Idempotency-Key", s1, 201))
@@ -333,20 +345,22 @@ def main():
     check(A, "retry with same key replays, no duplicate", s2[0] == 201 and data(s2) and data(s2)["id"] == st["id"] and s2[2].headers.get("Idempotent-Replayed") == "true", s2[0])
     expect(A, "same key, different body -> 422", acc.call("POST", "/branch-settlements", {**stbody, "reference": "TX2"}, headers={"Idempotency-Key": key}), 422, "IDEMPOTENCY_KEY_REUSED")
     bal = data(expect(A, "Kandy balance", kr.call("GET", f"/branches/{kandy['id']}/balance"), 200))
-    check(A, "outstanding = 191520 - 100000", bal and float(bal["outstandingAmount"]) == 91520, bal)
+    check(A, f"outstanding = {OWED} - 100000", bal and float(bal["outstandingAmount"]) == OWED - 100000, bal)
     expect(A, "other branch balance -> 403", cr.call("GET", f"/branches/{kandy['id']}/balance"), 403)
-    expect(A, "re-record below settled -> 409", kr.call("POST", "/branch-sales", {**sbody, "items": [{"chickenTypeId": broiler["id"], "weightKg": "50"}]}), 409, "BUSINESS_RULE_VIOLATION")
+    expect(A, "reverse paid delivery -> 409", dist.call("POST", f"/distributions/{d1['id']}/reverse", {"reason": "x"}), 409, "BUSINESS_RULE_VIOLATION")
     expect(A, "list", acc.call("GET", "/branch-settlements", params={"branchId": kandy["id"]}), 200)
-    expect(A, "get", acc.call("GET", f"/branch-settlements/{st['id']}"), 200)
+    got = data(expect(A, "get", acc.call("GET", f"/branch-settlements/{st['id']}"), 200))
+    check(A, "allocation points at the delivery", got and got["allocations"][0]["distributionId"] == d1["id"], got)
     expect(A, "reverse", acc.call("POST", f"/branch-settlements/{st['id']}/reverse", {"reason": "Bounced"}), 200)
     expect(A, "reverse twice -> 409", acc.call("POST", f"/branch-settlements/{st['id']}/reverse", {"reason": "x"}), 409, "INVALID_STATUS_TRANSITION")
     bal = data(acc.call("GET", f"/branches/{kandy['id']}/balance"))
-    check(A, "balance restored after reversal", bal and float(bal["outstandingAmount"]) == 191520, bal)
+    check(A, "balance restored after reversal", bal and float(bal["outstandingAmount"]) == OWED, bal)
     expect(A, "settle again 50000", acc.call("POST", "/branch-settlements", {**stbody, "amount": "50000.00", "reference": "TX3",
-           "allocations": [{"branchSaleId": sale["id"], "amount": "50000.00"}]}), 201)
-    opens = data(expect(A, "open sales", acc.call("GET", f"/branches/{kandy['id']}/open-sales"), 200))
-    check(A, "open sale left to pay 141520", opens and len(opens) == 1 and opens[0]["branchSaleId"] == sale["id"] and opens[0]["outstandingAmount"] == "141520.00", opens)
-    expect(A, "other branch open sales -> 403", cr.call("GET", f"/branches/{kandy['id']}/open-sales"), 403)
+           "allocations": [{"distributionId": d1["id"], "amount": "50000.00"}]}), 201)
+    opens = data(expect(A, "open deliveries", acc.call("GET", f"/branches/{kandy['id']}/open-deliveries"), 200))
+    check(A, f"delivery left to pay {OWED - 50000}", opens and len(opens) == 1 and opens[0]["distributionId"] == d1["id"]
+          and float(opens[0]["outstandingAmount"]) == OWED - 50000, opens)
+    expect(A, "other branch open deliveries -> 403", cr.call("GET", f"/branches/{kandy['id']}/open-deliveries"), 403)
 
     # ---------------------------------------------------------------- reports
     A = "Reports"

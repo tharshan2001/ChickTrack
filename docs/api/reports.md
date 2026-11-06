@@ -14,7 +14,7 @@ Access roles: `OWNER`, `ACCOUNTANT`, `VIEWER`, `PROCUREMENT_MANAGER`, `WAREHOUSE
 GET /api/v1/dashboard?from=2026-01-01&to=2026-01-31&branchId=...
 ```
 
-`from` and `to` default to today. `branchId` is optional and scopes distribution, outstanding, and shrinkage figures.
+`from` and `to` default to today. `branchId` is optional and scopes distribution, outstanding, and shrinkage figures. `branchOutstanding` is the value of deliveries received in the period minus settlements posted in the period; the lifetime balance of a branch is `GET /branches/{id}/balance`.
 
 Example response:
 
@@ -84,7 +84,9 @@ Totals: `weightKg`, `cost` (landed), `transferValue`, `ourMargin`, `expenseAmoun
 GET /api/v1/reports/sales?branchId=...&from=2026-01-01&to=2026-01-31
 ```
 
-Totals: `totalSales`, `transferValue`, `branchProfit`, `profitPercent`.
+One row per day close: `reference`, `saleDate`, `branchName`, `totalSales` (takings), `expectedSales` (sold weight x branch price, null without a price), `variance` (takings - expected; negative = short), `transferValue` (cost of stock sold), `branchProfit`, `profitPercent`.
+
+Totals: `totalSales`, `expectedSales`, `variance` (both over the days with a known expected figure), `transferValue`, `branchProfit`, `profitPercent`.
 
 ### Profit
 
@@ -92,7 +94,7 @@ Totals: `totalSales`, `transferValue`, `branchProfit`, `profitPercent`.
 GET /api/v1/reports/profit?branchId=...&from=2026-01-01&to=2026-01-31
 ```
 
-Rows are grouped per branch and are based on the sales the branch entered.
+Rows are grouped per branch and are based on the branch's day closes.
 Totals: `saleCount`, `totalSales`, `transferValue`, `branchProfit`, `profitPercent`.
 
 ### Shrinkage
@@ -141,7 +143,7 @@ How each line is worked out:
 | `headOffice.costOfGoods` | Landed cost of that stock (purchase + commission + procurement expenses) | distribution date |
 | `headOffice.distributionExpenses` | Distribution expenses, passed through in the transfer price | distribution date |
 | `headOffice.margin` | Our margin: transfer revenue − cost of goods − distribution expenses | distribution date |
-| `branches.sales` / `costOfSales` / `profit` | Branch sales, the transfer value of the stock sold, and their difference | sale date |
+| `branches.sales` / `costOfSales` / `profit` | Branch takings, the cost of the stock sold (opening − closing weight at the transfer price), and their difference | sale date |
 | `stockLosses.warehouseValue` | Warehouse loss and damage at the batch landed cost | day recorded |
 | `stockLosses.transitValue` | Receiving discrepancies at the line's transfer price (the branch is not charged for them) | receipt `receivedAt` |
 | `operatingExpenses` | Posted [operating expenses](expenses.md), total and per category | expense date |

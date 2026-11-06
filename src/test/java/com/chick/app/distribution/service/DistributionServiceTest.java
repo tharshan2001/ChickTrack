@@ -3,6 +3,7 @@ package com.chick.app.distribution.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -34,6 +35,8 @@ import com.chick.app.inventory.domain.StockBatch;
 import com.chick.app.inventory.repository.InventoryMovementRepository;
 import com.chick.app.inventory.repository.StockBatchRepository;
 import com.chick.app.margin.service.CompanyMarginRuleService;
+import com.chick.app.payment.domain.BranchSettlement;
+import com.chick.app.payment.repository.BranchSettlementRepository;
 import com.chick.app.sales.service.BranchSaleService;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -52,6 +55,7 @@ class DistributionServiceTest {
 	private final StockBatchRepository stockBatches = mock(StockBatchRepository.class);
 	private final InventoryMovementRepository movements = mock(InventoryMovementRepository.class);
 	private final BranchSaleService branchSales = mock(BranchSaleService.class);
+	private final BranchSettlementRepository settlements = mock(BranchSettlementRepository.class);
 
 	private DistributionService service;
 	private Distribution distribution;
@@ -74,7 +78,8 @@ class DistributionServiceTest {
 				mock(DocumentNumberService.class),
 				mock(CompanyMarginRuleService.class),
 				mock(BranchAccessService.class),
-				branchSales);
+				branchSales,
+				settlements);
 
 		Branch branch = new Branch();
 		branch.setId(UUID.randomUUID());
@@ -101,6 +106,7 @@ class DistributionServiceTest {
 
 		when(distributions.findById(distribution.getId())).thenReturn(Optional.of(distribution));
 		when(distributions.save(any(Distribution.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		when(settlements.allocatedToDistribution(any(), any())).thenReturn(BigDecimal.ZERO);
 	}
 
 	@Test
@@ -139,15 +145,28 @@ class DistributionServiceTest {
 	}
 
 	@Test
-	void reversalIsRejectedOnceTheBranchHasSoldTheStock() {
+	void reversalIsRejectedOnceTheBranchHasClosedDaysWithTheStock() {
 		markReceived(new BigDecimal("95.000"));
 		when(branchSales.availableWeightByChickenType(distribution.getBranch().getId()))
 				.thenReturn(Map.of(chickenType.getId(), new BigDecimal("40.000")));
 
 		assertThatThrownBy(() -> service.reverse(distribution.getId(), new DistributionReverseRequest("late")))
 				.isInstanceOf(BusinessException.class)
-				.hasMessageContaining("already sold");
+				.hasMessageContaining("closed days");
 		assertThat(batch.getRemainingWeightKg()).isEqualByComparingTo("0.000");
+		verify(movements, never()).save(any());
+		assertThat(distribution.getStatus()).isEqualTo(DistributionStatus.RECEIVED);
+	}
+
+	@Test
+	void reversalIsRejectedOncePaymentsAreRecordedAgainstTheDelivery() {
+		markReceived(new BigDecimal("95.000"));
+		when(settlements.allocatedToDistribution(eq(distribution.getId()), eq(BranchSettlement.Status.POSTED)))
+				.thenReturn(new BigDecimal("5000.00"));
+
+		assertThatThrownBy(() -> service.reverse(distribution.getId(), new DistributionReverseRequest("wrong branch")))
+				.isInstanceOf(BusinessException.class)
+				.hasMessageContaining("reverse them first");
 		verify(movements, never()).save(any());
 		assertThat(distribution.getStatus()).isEqualTo(DistributionStatus.RECEIVED);
 	}

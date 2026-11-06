@@ -138,28 +138,47 @@ class FlowIntegrationTest {
 		assertThat(held.getReservedWeightKg()).isEqualByComparingTo("0");
 		var line = distributions.get(dispatched.id()).items().get(0);
 
-		// Partial receipt rejected, full receipt with discrepancy accepted.
-		assertThatThrownBy(() -> distributions.receive(dispatched.id(), new BranchReceiptRequest(Instant.now(), null, List.of())))
+		// Partial receipt rejected, full receipt with discrepancy accepted. Received on the 4th (Colombo).
+		Instant receivedAt = Instant.parse("2026-11-04T06:30:00Z");
+		assertThatThrownBy(() -> distributions.receive(dispatched.id(), new BranchReceiptRequest(receivedAt, null, List.of())))
 				.isInstanceOf(Exception.class);
-		distributions.receive(dispatched.id(), new BranchReceiptRequest(Instant.now(), null,
+		distributions.receive(dispatched.id(), new BranchReceiptRequest(receivedAt, null,
 				List.of(new BranchReceiptItemRequest(line.id(), new BigDecimal("78"), DiscrepancyReason.MELT_WATER))));
 
-		var sale = sales.record(new BranchSaleCreateRequest(branch, LocalDate.of(2026, 11, 4), null,
-				List.of(new BranchSaleItemRequest(type, new BigDecimal("50")))));
+		// The branch owes for what it received: 78 kg x 800.
+		assertThat(settlements.branchBalance(branch).outstandingAmount()).isEqualByComparingTo("62400.00");
+		assertThat(settlements.openDeliveries(branch)).singleElement()
+				.satisfies(open -> assertThat(open.outstandingAmount()).isEqualByComparingTo("62400.00"));
+
+		// A closing count above what the branch holds is refused.
+		assertThatThrownBy(() -> sales.record(new BranchSaleCreateRequest(branch, LocalDate.of(2026, 11, 4),
+				new BigDecimal("50000"), null, List.of(new BranchSaleItemRequest(type, new BigDecimal("79"))))))
+				.isInstanceOf(BusinessException.class).hasMessageContaining("more than");
+
+		// Day close: 28 kg left of 78, so 50 kg sold; the branch took Rs 50,000.
+		var sale = sales.record(new BranchSaleCreateRequest(branch, LocalDate.of(2026, 11, 4),
+				new BigDecimal("50000"), null, List.of(new BranchSaleItemRequest(type, new BigDecimal("28")))));
+		assertThat(sale.items().get(0).openingWeightKg()).isEqualByComparingTo("78");
+		assertThat(sale.items().get(0).weightKg()).isEqualByComparingTo("50");
 		assertThat(sale.transferValue()).isEqualByComparingTo("40000.00");
+		assertThat(sale.branchProfit()).isEqualByComparingTo("10000.00");
+		assertThat(sale.expectedSales()).isEqualByComparingTo("50000.00");
+		assertThat(sale.variance()).isEqualByComparingTo("0.00");
+		assertThat(sales.stock(branch, null)).singleElement()
+				.satisfies(s -> assertThat(s.availableWeightKg()).isEqualByComparingTo("28"));
 
-		// Reversal blocked: branch sold 50 of 78.
+		// Reversal blocked: the branch closed a day with 50 of the 78 kg.
 		assertThatThrownBy(() -> distributions.reverse(dispatched.id(), new DistributionReverseRequest("x")))
-				.isInstanceOf(BusinessException.class).hasMessageContaining("already sold");
+				.isInstanceOf(BusinessException.class).hasMessageContaining("closed days");
 
+		// Payments go against the delivery; more than it owes is refused.
+		assertThatThrownBy(() -> settlements.create(new BranchSettlementCreateRequest(branch, LocalDate.of(2026, 11, 4),
+				new BigDecimal("70000.00"), "CASH", null, null,
+				List.of(new BranchSettlementAllocationRequest(dispatched.id(), new BigDecimal("70000.00"))))))
+				.isInstanceOf(BusinessException.class).hasMessageContaining("outstanding");
 		settlements.create(new BranchSettlementCreateRequest(branch, LocalDate.of(2026, 11, 4), new BigDecimal("1000.00"),
-				"CASH", null, null, List.of(new BranchSettlementAllocationRequest(sale.id(), new BigDecimal("1000.00")))));
-
-		// Re-recording the day below what has been settled is refused.
-		assertThatThrownBy(() -> sales.record(new BranchSaleCreateRequest(branch, LocalDate.of(2026, 11, 4), null,
-				List.of(new BranchSaleItemRequest(type, new BigDecimal("1"))))))
-				.isInstanceOf(BusinessException.class).hasMessageContaining("settled");
-		assertThat(settlements.branchBalance(branch).outstandingAmount()).isEqualByComparingTo("39000.00");
+				"CASH", null, null, List.of(new BranchSettlementAllocationRequest(dispatched.id(), new BigDecimal("1000.00")))));
+		assertThat(settlements.branchBalance(branch).outstandingAmount()).isEqualByComparingTo("61400.00");
 
 		// Procurements cannot be dated in the future.
 		assertThatThrownBy(() -> procurements.create(new ProcurementCreateRequest(supplier,

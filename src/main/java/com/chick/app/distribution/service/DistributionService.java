@@ -78,6 +78,7 @@ public class DistributionService {
 	private final CompanyMarginRuleService marginRules;
 	private final BranchAccessService branchAccess;
 	private final BranchSaleService branchSales;
+	private final com.chick.app.payment.repository.BranchSettlementRepository settlements;
 
 	public DistributionService(
 			DistributionRepository distributions,
@@ -92,7 +93,8 @@ public class DistributionService {
 			DocumentNumberService documentNumbers,
 			CompanyMarginRuleService marginRules,
 			BranchAccessService branchAccess,
-			BranchSaleService branchSales) {
+			BranchSaleService branchSales,
+			com.chick.app.payment.repository.BranchSettlementRepository settlements) {
 		this.distributions = distributions;
 		this.mapper = mapper;
 		this.branches = branches;
@@ -106,6 +108,7 @@ public class DistributionService {
 		this.marginRules = marginRules;
 		this.branchAccess = branchAccess;
 		this.branchSales = branchSales;
+		this.settlements = settlements;
 	}
 
 	@Transactional(readOnly = true)
@@ -391,6 +394,14 @@ public class DistributionService {
 			// otherwise only what the branch received. Recorded discrepancies stay as losses.
 			Map<DistributionItem, BigDecimal> returnedWeight = returnedWeightByLine(distribution);
 			if (distribution.getStatus() == DistributionStatus.RECEIVED) {
+				// The branch owes for a received delivery; payments against it must be reversed first.
+				BigDecimal paid = settlements.allocatedToDistribution(distribution.getId(),
+						com.chick.app.payment.domain.BranchSettlement.Status.POSTED);
+				if (paid.signum() > 0) {
+					throw new BusinessException("BUSINESS_RULE_VIOLATION",
+							"Payments of " + paid.toPlainString() + " are recorded against this delivery; reverse them first",
+							HttpStatus.CONFLICT);
+				}
 				ensureBranchStillHoldsStock(distribution, returnedWeight);
 			}
 			for (DistributionItem item : distribution.getItems()) {
@@ -444,7 +455,7 @@ public class DistributionService {
 			BigDecimal held = available.getOrDefault(entry.getKey(), BigDecimal.ZERO);
 			if (held.compareTo(entry.getValue()) < 0) {
 				throw new BusinessException("BUSINESS_RULE_VIOLATION",
-						"The branch has already sold stock from this distribution; correct the branch sales first",
+						"The branch has already closed days using stock from this delivery; it no longer holds all of it",
 						HttpStatus.CONFLICT);
 			}
 		}

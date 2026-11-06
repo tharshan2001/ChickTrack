@@ -41,6 +41,10 @@ public class BranchSale extends BaseEntity {
 	@Column(name = "transfer_value", nullable = false, precision = 16, scale = 2)
 	private BigDecimal transferValue = BigDecimal.ZERO;
 
+	/** Sold weight x branch selling price; null when a sold type has no price set. */
+	@Column(name = "expected_sales", precision = 16, scale = 2)
+	private BigDecimal expectedSales;
+
 	@Column(name = "branch_profit", nullable = false, precision = 16, scale = 2)
 	private BigDecimal branchProfit = BigDecimal.ZERO;
 

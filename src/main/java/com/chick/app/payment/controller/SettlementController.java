@@ -66,9 +66,10 @@ public class SettlementController {
 		return ResponseEntity.ok(ApiResponse.of(service.branchBalance(id)));
 	}
 
-	@GetMapping("/branches/{id}/open-sales")
+	/** Received deliveries the branch still owes for, oldest first. */
+	@GetMapping("/branches/{id}/open-deliveries")
 	@PreAuthorize("isAuthenticated()")
-	public ResponseEntity<ApiResponse<java.util.List<com.chick.app.payment.dto.OpenSaleResponse>>> openSales(@PathVariable UUID id) {
-		return ResponseEntity.ok(ApiResponse.of(service.openSales(id)));
+	public ResponseEntity<ApiResponse<java.util.List<com.chick.app.payment.dto.OpenDeliveryResponse>>> openDeliveries(@PathVariable UUID id) {
+		return ResponseEntity.ok(ApiResponse.of(service.openDeliveries(id)));
 	}
 }
