@@ -275,6 +275,18 @@ def main():
     d2 = data(expect(A, "second draft 100 kg", dist.call("POST", "/distributions", {**dbody, "items": [{"chickenTypeId": broiler["id"], "weightKg": "100"}], "expenses": []}), 201))
     expect(A, "reverse draft", dist.call("POST", f"/distributions/{d2['id']}/reverse", {"reason": "Not needed"}), 200)
     check(A, "reservation released", float(data(wh.call("GET", f"/stock-batches/{bb['id']}"))["reservedWeightKg"]) == 300)
+    # MANUAL expense: the amount per product is typed and must add up to the expense.
+    mbody = {**dbody, "items": [{"chickenTypeId": broiler["id"], "weightKg": "100"}],
+             "expenses": [{"categoryId": transport["id"], "description": "Hired lorry", "amount": "1000", "allocationMethod": "MANUAL",
+                           "manualShares": [{"chickenTypeId": broiler["id"], "amount": "1000"}]}]}
+    expect(A, "manual amounts not adding up -> 400", dist.call("POST", "/distributions", {**mbody, "expenses": [{**mbody["expenses"][0], "manualShares": [{"chickenTypeId": broiler["id"], "amount": "900"}]}]}), 400, "VALIDATION_FAILED")
+    expect(A, "manual amount for a product not dispatched -> 400", dist.call("POST", "/distributions", {**mbody, "expenses": [{**mbody["expenses"][0], "manualShares": [{"chickenTypeId": broiler["id"], "amount": "500"}, {"chickenTypeId": layer["id"], "amount": "500"}]}]}), 400, "VALIDATION_FAILED")
+    expect(A, "manual amounts on a by-weight expense -> 400", dist.call("POST", "/distributions", {**mbody, "expenses": [{**mbody["expenses"][0], "allocationMethod": "BY_WEIGHT"}]}), 400, "VALIDATION_FAILED")
+    d3 = data(expect(A, "manual expense draft", dist.call("POST", "/distributions", mbody), 201))
+    check(A, "manual Rs 1000 on 100 kg adds 10/kg to the transfer price", d3 and float(d3["items"][0]["distributionExpensePerKg"]) == 10
+          and float(d3["items"][0]["transferPricePerKg"]) == 912, d3 and d3["items"][0])
+    if d3:
+        expect(A, "reverse manual draft", dist.call("POST", f"/distributions/{d3['id']}/reverse", {"reason": "Test only"}), 200)
     expect(A, "receive before dispatch -> 409", kr.call("POST", f"/distributions/{d1['id']}/receipts", {"receivedAt": "2026-11-04T08:00:00Z", "items": [{"distributionItemId": d1["items"][0]["id"], "receivedWeightKg": "300"}]}), 409, "INVALID_STATUS_TRANSITION")
     dd = data(expect(A, "dispatch", dist.call("POST", f"/distributions/{d1['id']}/dispatch"), 200))
     check(A, "status DISPATCHED", dd and dd["status"] == "DISPATCHED")
@@ -289,7 +301,7 @@ def main():
     rc = data(expect(A, "Kandy receives 295 kg (5 kg melt water)", kr.call("POST", f"/distributions/{d1['id']}/receipts", {"receivedAt": "2026-11-04T08:00:00Z", "notes": "ok", "items": [{"distributionItemId": d1["items"][0]["id"], "receivedWeightKg": "295", "discrepancyReason": "MELT_WATER"}]}), 200))
     check(A, "discrepancy 5 kg recorded", rc and float(rc["items"][0]["discrepancyWeightKg"]) == 5, rc)
     lst = data(expect(A, "Kandy receiver lists own deliveries", kr.call("GET", "/distributions"), 200))
-    check(A, "receiver sees 2 (received + reversed draft)", lst and lst["totalElements"] == 2, lst and lst["totalElements"])
+    check(A, "receiver sees 3 (received + 2 reversed drafts)", lst and lst["totalElements"] == 3, lst and lst["totalElements"])
     lst = data(cr.call("GET", "/distributions"))
     check(A, "Colombo receiver sees none", lst and lst["totalElements"] == 0, lst and lst["totalElements"])
     expect(A, "Colombo receiver asking for Kandy -> 403", cr.call("GET", "/distributions", params={"branchId": kandy["id"]}), 403)

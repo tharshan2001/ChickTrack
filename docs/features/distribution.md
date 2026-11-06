@@ -20,7 +20,7 @@ Move stock to branches, record delivery, and capture discrepancies.
 1. Create a distribution for a branch.
 2. Add chicken types and requested weights.
 3. Backend allocates stock using FIFO.
-4. The transfer price is computed per line (landed cost + our margin + allocated distribution expenses).
+4. The transfer price is computed per line (landed cost + our margin + allocated distribution expenses). Expenses are shared by weight, or by amounts typed per product (MANUAL).
 5. Distribution is dispatched.
 6. Branch receives the delivery.
 7. Branch records received weight and discrepancy reasons.

@@ -229,6 +229,7 @@ public class DistributionService {
 				if (expenseRequest.allocationMethod() != null) {
 					expense.setAllocationMethod(expenseRequest.allocationMethod());
 				}
+				expense.setManualShareByType(manualShares(expenseRequest, expense.getAmount(), request));
 				distribution.getExpenses().add(expense);
 			}
 		}
@@ -516,27 +517,30 @@ public class DistributionService {
 		}
 
 		for (DistributionExpense expense : distribution.getExpenses()) {
+			Map<DistributionItem, BigDecimal> shares;
 			if (expense.getAllocationMethod() == DistributionExpense.AllocationMethod.MANUAL) {
-				continue;
-			}
-			BigDecimal allocated = BigDecimal.ZERO;
-			for (int i = 0; i < distribution.getItems().size(); i++) {
-				DistributionItem item = distribution.getItems().get(i);
-				BigDecimal amount;
-				if (i == distribution.getItems().size() - 1) {
-					amount = expense.getAmount().subtract(allocated);
-				} else {
-					amount = expense.getAmount().multiply(item.getWeightKg())
-							.divide(totalWeight, MONEY_SCALE, RoundingMode.HALF_UP);
-					allocated = allocated.add(amount);
+				// Each chicken type carries the amount typed for it, split over its lines by weight.
+				shares = new IdentityHashMap<>();
+				for (var typeShare : expense.getManualShareByType().entrySet()) {
+					List<DistributionItem> lines = distribution.getItems().stream()
+							.filter(item -> item.getChickenType().getId().equals(typeShare.getKey()))
+							.toList();
+					shares.putAll(splitByWeight(typeShare.getValue(), lines));
 				}
-				amount = amount.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+			}
+			else {
+				shares = splitByWeight(expense.getAmount(), distribution.getItems());
+			}
+			for (var share : shares.entrySet()) {
+				if (share.getValue().signum() == 0) {
+					continue;
+				}
 				ExpenseAllocation allocation = new ExpenseAllocation();
 				allocation.setDistributionExpense(expense);
-				allocation.setDistributionItem(item);
-				allocation.setAmount(amount);
+				allocation.setDistributionItem(share.getKey());
+				allocation.setAmount(share.getValue());
 				expenseAllocations.save(allocation);
-				allocatedPerItem.merge(item, amount, BigDecimal::add);
+				allocatedPerItem.merge(share.getKey(), share.getValue(), BigDecimal::add);
 			}
 		}
 
@@ -550,6 +554,66 @@ public class DistributionService {
 					.add(item.getOurMarginPerKg())
 					.add(expensePerKg));
 		}
+	}
+
+	/** Splits an amount over lines by weight; the last line takes the rounding. */
+	private static Map<DistributionItem, BigDecimal> splitByWeight(BigDecimal amount, List<DistributionItem> lines) {
+		Map<DistributionItem, BigDecimal> shares = new IdentityHashMap<>();
+		BigDecimal weight = lines.stream().map(DistributionItem::getWeightKg).reduce(BigDecimal.ZERO, BigDecimal::add);
+		if (lines.isEmpty() || weight.signum() <= 0) {
+			return shares;
+		}
+		BigDecimal allocated = BigDecimal.ZERO;
+		for (int i = 0; i < lines.size(); i++) {
+			DistributionItem line = lines.get(i);
+			BigDecimal share = i == lines.size() - 1
+					? amount.subtract(allocated)
+					: amount.multiply(line.getWeightKg()).divide(weight, MONEY_SCALE, RoundingMode.HALF_UP);
+			share = share.setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+			allocated = allocated.add(share);
+			shares.put(line, share);
+		}
+		return shares;
+	}
+
+	/**
+	 * Checks the per-type amounts of a MANUAL expense: one per chicken type on the dispatch, adding up to
+	 * the expense. Other methods must not carry any.
+	 */
+	private Map<UUID, BigDecimal> manualShares(DistributionExpenseRequest expenseRequest, BigDecimal amount,
+			DistributionCreateRequest request) {
+		var given = expenseRequest.manualShares() == null ? List.<com.chick.app.distribution.dto.ManualExpenseShareRequest>of()
+				: expenseRequest.manualShares();
+		if (expenseRequest.allocationMethod() != DistributionExpense.AllocationMethod.MANUAL) {
+			if (!given.isEmpty()) {
+				throw new BusinessException("VALIDATION_FAILED",
+						"Amounts per product are only for MANUAL expenses", HttpStatus.BAD_REQUEST);
+			}
+			return new LinkedHashMap<>();
+		}
+		Set<UUID> dispatched = new HashSet<>();
+		request.items().forEach(item -> dispatched.add(item.chickenTypeId()));
+		Map<UUID, BigDecimal> shares = new LinkedHashMap<>();
+		BigDecimal total = BigDecimal.ZERO;
+		for (var share : given) {
+			if (!dispatched.contains(share.chickenTypeId())) {
+				throw new BusinessException("VALIDATION_FAILED",
+						"A manual expense amount is for a product that is not on this dispatch", HttpStatus.BAD_REQUEST);
+			}
+			BigDecimal value = share.amount().setScale(MONEY_SCALE, RoundingMode.HALF_UP);
+			if (shares.put(share.chickenTypeId(), value) != null) {
+				throw new BusinessException("VALIDATION_FAILED",
+						"Enter one manual expense amount per product", HttpStatus.BAD_REQUEST);
+			}
+			total = total.add(value);
+		}
+		if (total.compareTo(amount) != 0) {
+			throw new BusinessException("VALIDATION_FAILED",
+					"Manual expense amounts add up to " + total.toPlainString() + ", not the expense of "
+							+ amount.toPlainString(),
+					HttpStatus.BAD_REQUEST);
+		}
+		return shares;
 	}
 
 	private DistributionResponse toResponse(Distribution distribution) {

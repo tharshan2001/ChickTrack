@@ -58,6 +58,7 @@ public interface DistributionMapper {
 	@Mapping(target = "version", ignore = true)
 	@Mapping(target = "createdAt", ignore = true)
 	@Mapping(target = "updatedAt", ignore = true)
+	@Mapping(target = "manualShareByType", ignore = true)
 	DistributionExpense toExpense(DistributionExpenseRequest request);
 
 	@Mapping(target = "stockBatchId", source = "stockBatch.id")

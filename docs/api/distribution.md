@@ -96,7 +96,29 @@ landed cost (from the batch)
 = transfer price per kg
 ```
 
-The branch selling price is not part of a distribution; it is applied when the branch records its sales.
+The branch selling price is not part of a distribution; it gives the expected sales of a day close.
+
+### Splitting distribution expenses
+
+Each expense in `expenses` has an `allocationMethod`:
+
+- `BY_WEIGHT` (default): the amount is shared across all lines by weight.
+- `MANUAL`: `manualShares` gives the amount each chicken type carries. The amounts must add up to the expense, there is one per chicken type, and each must be a type on the dispatch (`VALIDATION_FAILED` otherwise). A type's amount is shared across its lines (one per stock batch) by weight. Other methods must not send `manualShares`.
+
+```json
+{
+  "categoryId": "…",
+  "description": "Hired lorry",
+  "amount": "3000.00",
+  "allocationMethod": "MANUAL",
+  "manualShares": [
+    { "chickenTypeId": "<broiler>", "amount": "1800.00" },
+    { "chickenTypeId": "<country>", "amount": "1200.00" }
+  ]
+}
+```
+
+Either way the allocated amount per kg is added to the line's transfer price, so the branch pays it.
 
 ## Rules
 

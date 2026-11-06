@@ -45,4 +45,8 @@ public class DistributionExpense extends BaseEntity {
 	@Enumerated(EnumType.STRING)
 	@Column(name = "allocation_method", nullable = false, length = 20)
 	private AllocationMethod allocationMethod = AllocationMethod.BY_WEIGHT;
+
+	/** MANUAL only, while the distribution is created: amount per chicken type (kept as expense_allocations). */
+	@jakarta.persistence.Transient
+	private java.util.Map<java.util.UUID, BigDecimal> manualShareByType = new java.util.LinkedHashMap<>();
 }
